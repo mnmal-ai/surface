@@ -12,7 +12,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "check-types": "pnpm -r check-types",
-    "lint": "pnpm -r lint",
+    "lint": "biome check --error-on-warnings .",
     "guards": "node --test scripts/guards.test.mjs && node scripts/no-domain-imports.mjs && node scripts/no-raw-hex.mjs && node scripts/no-ink-in-pure.mjs",
     "pack:local": "mkdir -p .pack && for p in core kit theme; do pnpm -C packages/surface-$p pack --out ../../.pack/surface-$p.tgz; done"
   },
