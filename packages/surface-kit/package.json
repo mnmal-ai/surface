@@ -1,0 +1,61 @@
+{
+  "name": "@mnmal-ai/surface-kit",
+  "version": "0.14.5",
+  "description": "Stateless Ink view primitives for surface terminal UIs: panels, cells, markdown spans, spinners, sparklines.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnmal-ai/surface.git",
+    "directory": "packages/surface-kit"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cells": {
+      "types": "./dist/cells.d.ts",
+      "import": "./dist/cells.js"
+    },
+    "./text": {
+      "types": "./dist/text.d.ts",
+      "import": "./dist/text.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown && tsc -p tsconfig.dts.json",
+    "test": "vitest run",
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@mnmal-ai/surface-theme": "workspace:*",
+    "string-width": "catalog:"
+  },
+  "peerDependencies": {
+    "ink": "^7.1.1",
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@mnmal-ai/substrate-config": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "ink": "catalog:",
+    "ink-testing-library": "catalog:",
+    "react": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=26.2.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}

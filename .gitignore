@@ -1,0 +1,11 @@
+node_modules
+dist
+*.tsbuildinfo
+.turbo
+
+# Machine-local OpenCode project config.
+.opencode/
+.pack/
+
+# Internal plans, specs and review notes live outside the repo (__docs__/<repo>/).
+docs/superpowers/

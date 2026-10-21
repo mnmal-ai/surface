@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    # ready_for_review is load-bearing: the job skips drafts, and without this
+    # type a PR whose last push happened as a draft never gets a real run after
+    # it is marked ready, and would merge on a skipped check.
+    # No paths-ignore: these jobs are required checks, and a skipped workflow
+    # never reports, which would leave a docs-only PR unmergeable.
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+# Cancel any in-flight CI on the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  ci:
+    name: Build, type-check, lint & test
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c  # v4.3.0
+        with:
+          cache: true
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Type-check
+        run: pnpm check-types
+
+      # Added 2026-08-02 with the repo's first biome.json. Lint had been red for
+      # months precisely because nothing ran it here — biome was falling back to
+      # defaults that disagreed with the house style on every file.
+      - name: Lint
+        run: pnpm lint
+
+      - name: Guards (no domain imports, no raw hex)
+        run: pnpm guards
+
+      # The fleet toolchain (substrate-config's toolchain.json, generated from
+      # mnmal-ai/substrate). Drift fails here, not at the next release.
+      - name: Fleet toolchain alignment
+        run: pnpm exec substrate-toolchain-check --strict --root "$GITHUB_WORKSPACE"
+
+      - name: Test
+        run: pnpm test

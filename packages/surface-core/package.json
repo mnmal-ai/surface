@@ -1,0 +1,57 @@
+{
+  "name": "@mnmal-ai/surface-core",
+  "version": "0.14.5",
+  "description": "Pluggable terminal UI base on Ink 7 + React 19: module registry, createApp, the turn engine and the shell.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnmal-ai/surface.git",
+    "directory": "packages/surface-core"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pure": {
+      "types": "./dist/pure.d.ts",
+      "import": "./dist/pure.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown && tsc -p tsconfig.dts.json",
+    "test": "vitest run",
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@mnmal-ai/surface-kit": "workspace:*",
+    "@mnmal-ai/surface-theme": "workspace:*"
+  },
+  "peerDependencies": {
+    "ink": "^7.1.1",
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@mnmal-ai/substrate-config": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "ink": "catalog:",
+    "ink-testing-library": "catalog:",
+    "react": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=26.2.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}
