@@ -3,6 +3,11 @@ dist
 *.tsbuildinfo
 .turbo
 
+# Machine-local Claude Code settings. Identity rides in settings.local.json
+# `env`; `.mcp.json` holds machine-local absolute paths.
+.claude/settings.local.json
+.mcp.json
+
 # Machine-local OpenCode project config.
 .opencode/
 .pack/
