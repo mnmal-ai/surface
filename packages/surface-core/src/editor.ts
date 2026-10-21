@@ -147,10 +147,13 @@ export function insertChunk(d: Draft, chunk: string): { draft: Draft; submit: st
  * operator edits and presses Enter. Nothing about a paste may be the Enter.
  */
 export function pasteToLine(text: string): string {
-  return text
-    .replace(/[\t\f\v]+/g, ' ')
-    .replace(/\s*(?:\r\n|\r|\n)\s*/g, ' ')
-    .trim();
+  return (
+    text
+      .replace(/[\t\f\v]+/g, ' ')
+      // One `\s+` per run keeps this linear; a run holding a line break folds to a space.
+      .replace(/\s+/g, (run) => (/[\r\n]/.test(run) ? ' ' : run))
+      .trim()
+  );
 }
 
 /** The grapheme cluster at a cursor boundary, or '' at the end of the line. */

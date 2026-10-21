@@ -117,6 +117,12 @@ describe('pasteToLine — a paste is DRAFT, never a submission', () => {
     expect(r.submit).toEqual([]);
     expect(r.draft.text).toBe('tell me about liminal spaces');
   });
+
+  it('stays linear on a long whitespace run with no line break', () => {
+    const start = performance.now();
+    expect(pasteToLine(`a${' '.repeat(20_000)}b`)).toBe(`a${' '.repeat(20_000)}b`);
+    expect(performance.now() - start).toBeLessThan(50);
+  });
 });
 
 describe('maskDraft', () => {
