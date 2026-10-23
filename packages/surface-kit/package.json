@@ -1,6 +1,6 @@
 {
   "name": "@mnmal-ai/surface-kit",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "Stateless Ink view primitives for surface terminal UIs: panels, cells, markdown spans, spinners, sparklines.",
   "license": "Apache-2.0",
   "repository": {
