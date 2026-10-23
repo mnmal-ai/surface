@@ -2,7 +2,7 @@ import { defaultTheme } from '@mnmal-ai/surface-theme';
 import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 import { createApp, defineModule, type ModuleCtx, type WaitingViewProps } from '../src/index.js';
-import { echo } from './fixture.js';
+import { echo, releaseSlow } from './fixture.js';
 
 // A turn still waiting, the exit hint, and a panel opened only onto an empty surface.
 
@@ -22,7 +22,8 @@ describe('a turn still waiting', () => {
     // marked, below the transcript.
     expect(r.lastFrame()).toContain('echo: quick');
     expect(r.lastFrame()).toMatch(/⟨\d+⟩ …/);
-    await tick(120);
+    releaseSlow();
+    await tick();
     expect(r.lastFrame()).toContain('echo: slow first');
     expect(r.lastFrame()).not.toMatch(/⟨\d+⟩ …/);
     r.unmount();
@@ -45,7 +46,8 @@ describe('a turn still waiting', () => {
     r.stdin.write(ENTER);
     await tick(30);
     expect(r.lastFrame()).toContain('WAIT[marked] slow first …');
-    await tick(120);
+    releaseSlow();
+    await tick();
     expect(r.lastFrame()).not.toContain('WAIT[');
     expect(seen.some((l) => l.startsWith('WAIT[held] quick'))).toBe(true);
     r.unmount();
