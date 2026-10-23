@@ -1,6 +1,13 @@
 import { defineModule, type TurnUpdate } from '../src/index.js';
 
-/** Echoes after a pending update. 'slow …' waits 60ms, so a later fast turn overtakes it. */
+const slowGates: (() => void)[] = [];
+
+/** Lets every 'slow …' echo turn waiting so far land. */
+export function releaseSlow(): void {
+  for (const open of slowGates.splice(0)) open();
+}
+
+/** Echoes after a pending update. 'slow …' waits for `releaseSlow()`, so a later fast turn overtakes it. */
 export const echo = defineModule('fixture.echo', {
   turns: [
     {
@@ -8,7 +15,7 @@ export const echo = defineModule('fixture.echo', {
       claims: () => 1,
       async *answer(text: string): AsyncIterable<TurnUpdate> {
         yield { phase: 'pending', reply: { kind: 'fixture.text', data: '…' } };
-        if (text.startsWith('slow')) await new Promise((r) => setTimeout(r, 60));
+        if (text.startsWith('slow')) await new Promise<void>((r) => slowGates.push(r));
         if (text === 'boom') throw new Error('handler exploded');
         yield {
           phase: 'final',

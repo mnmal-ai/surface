@@ -17,9 +17,22 @@ import {
   type TuiModule,
   type TurnContext
 } from '../src/index.js';
-import { echo, panels } from './fixture.js';
+import { echo, panels, releaseSlow } from './fixture.js';
 
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+
+/** Retries `check` until it passes, rethrowing its last failure after `ms`. */
+async function until(check: () => void, ms = 2000): Promise<void> {
+  const end = Date.now() + ms;
+  for (;;) {
+    try {
+      return check();
+    } catch (e) {
+      if (Date.now() > end) throw e;
+    }
+    await tick(10);
+  }
+}
 const ENTER = '\r';
 const ESC = '\u001B';
 const TAB = '\t';
@@ -50,7 +63,9 @@ describe('createApp shell (contract fixture)', () => {
     app.stdin.write(ENTER);
     app.stdin.write('fast');
     app.stdin.write(ENTER);
-    await tick(150);
+    await tick();
+    releaseSlow();
+    await tick();
     const f = app.frame();
     expect(f).toContain('⟨1⟩');
     expect(f).toContain('↩ ⟨1⟩');
@@ -1298,7 +1313,7 @@ describe('panel and renderer size', () => {
   const open = async (app: ReturnType<typeof mount>) => {
     app.stdin.write('/room');
     app.stdin.write(ENTER);
-    await tick();
+    await until(() => expect(app.frame()).toContain('ROOM'));
   };
 
   it('a panel gets the columns left beside the rail, and the default rows', async () => {
@@ -1339,8 +1354,7 @@ describe('panel and renderer size', () => {
     expect(app.frame()).toContain('ROOM 59x22');
     Object.defineProperty(app.stdout, 'columns', { value: 90, configurable: true });
     app.stdout.emit('resize');
-    await tick();
-    expect(app.frame()).toContain('ROOM 49x22');
+    await until(() => expect(app.frame()).toContain('ROOM 49x22'));
   });
 
   it('band takes 5 more rows from the panel by default', async () => {
@@ -1429,7 +1443,9 @@ describe('reading the conversation and saying an unprompted line', () => {
     r.stdin.write(ENTER);
     r.stdin.write('quick');
     r.stdin.write(ENTER);
-    await tick(150);
+    await tick();
+    releaseSlow();
+    await tick();
     const t = r.ctx().transcript();
     expect(answerEntry(t, null)?.question).toBe('slow first');
     const marked = t.committed.filter((e) => e.kind === 'answer' && e.mark !== null);
@@ -1454,7 +1470,8 @@ describe('reading the conversation and saying an unprompted line', () => {
     await tick(20);
     const held = r.ctx().transcript().flights;
     expect(held.map((f) => f.question)).toEqual(['slow held']);
-    await tick(120);
+    releaseSlow();
+    await tick();
     expect(r.ctx().transcript().flights).toEqual([]);
   });
 
@@ -1641,7 +1658,8 @@ describe('the app draws its own ask and answer frames', () => {
     r.stdin.write(ENTER);
     await tick(20);
     expect(r.lastFrame()).toContain('ASK[held] Looking up Burial em=Burial');
-    await tick(120);
+    releaseSlow();
+    await tick();
     expect(r.lastFrame()).toContain('ASK[done] Looking up Burial em=Burial');
     expect(r.lastFrame()).not.toContain('› Looking up Burial');
   });
@@ -1652,7 +1670,9 @@ describe('the app draws its own ask and answer frames', () => {
     r.stdin.write(ENTER);
     r.stdin.write('quick');
     r.stdin.write(ENTER);
-    await tick(150);
+    await tick();
+    releaseSlow();
+    await tick();
     const frame = r.lastFrame() ?? '';
     expect(frame).toContain('echo: quick');
     expect(frame).toMatch(/FRAME mark=\d+ unprompted=false/);
