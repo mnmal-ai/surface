@@ -1,6 +1,6 @@
 {
   "name": "@mnmal-ai/surface-core",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "Pluggable terminal UI base on Ink 7 + React 19: module registry, createApp, the turn engine and the shell.",
   "license": "Apache-2.0",
   "repository": {

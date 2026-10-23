@@ -1,6 +1,6 @@
 {
   "name": "@mnmal-ai/surface-theme",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "Semantic colour tokens and themes for surface terminal UIs; the only place colours are written.",
   "license": "Apache-2.0",
   "repository": {
