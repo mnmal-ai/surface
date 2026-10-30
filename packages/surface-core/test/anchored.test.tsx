@@ -48,26 +48,32 @@ function onTerminal(anchored: boolean) {
 }
 
 describe('a bottom-anchored pane', () => {
-  it('a panel closing gives its rows back as a gap, so the input returns to the last row', async () => {
+  it('a live region that shrinks gives its rows back as a gap, so the input returns to the last row', async () => {
     for (const anchored of [true, false]) {
       const h = holder();
       const { App } = createApp({ theme: defaultTheme, modules: [echo, panels, h.mod], anchored });
       const r = render(<App columns={100} rows={30} />);
+      const gaps = () =>
+        h
+          .ctx()
+          .transcript()
+          .committed.filter((e) => e.kind === 'gap');
       r.stdin.write('/');
       await tick();
+      // Narrowing the palette shrinks it while it stays open: nothing re-lays.
+      r.stdin.write('hel');
+      await tick();
+      if (anchored) {
+        expect(gaps().length).toBeGreaterThan(0);
+        expect(gaps()[0]).toMatchObject({ kind: 'gap', epoch: 0 });
+        expect((gaps()[0] as { lines: number }).lines).toBeGreaterThan(0);
+      } else {
+        expect(gaps()).toEqual([]);
+      }
+      // The close re-lays, which prints everything again: no gap outlives it.
       r.stdin.write('\u001B');
       await tick();
-      const gaps = h
-        .ctx()
-        .transcript()
-        .committed.filter((e) => e.kind === 'gap');
-      if (anchored) {
-        expect(gaps).toHaveLength(1);
-        expect(gaps[0]).toMatchObject({ kind: 'gap', epoch: 0 });
-        expect((gaps[0] as { lines: number }).lines).toBeGreaterThan(0);
-      } else {
-        expect(gaps).toEqual([]);
-      }
+      expect(gaps()).toEqual([]);
       r.unmount();
     }
   });

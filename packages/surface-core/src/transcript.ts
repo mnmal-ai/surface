@@ -63,7 +63,7 @@ export interface Flight {
 }
 
 export interface Transcript<R, X extends AppEntry = never> {
-  /** Append-only: exactly what Static requires. */
+  /** Append-only between re-lays: exactly what Static requires. A re-lay drops the gaps. */
   readonly committed: readonly Entry<R, X>[];
   /** Unanswered turns, in send order. */
   readonly flights: readonly Flight[];
@@ -176,4 +176,10 @@ export function addGap<R, X extends AppEntry>(
 ): Transcript<R, X> {
   if (lines <= 0) return t;
   return commitEntry(t, { key: `gap:${t.committed.length}`, kind: 'gap', lines, epoch });
+}
+
+/** The transcript without its gaps: for a re-lay, which prints everything again from scratch. */
+export function dropGaps<R, X extends AppEntry>(t: Transcript<R, X>): Transcript<R, X> {
+  if (!t.committed.some((e) => e.kind === 'gap')) return t;
+  return { ...t, committed: t.committed.filter((e) => e.kind !== 'gap') };
 }

@@ -1619,6 +1619,18 @@ describe('turn context: what a turn is shown as, its emphasis and context, its i
     expect(count('› typed line')).toBe(2);
     expect(count('› module line')).toBe(1);
   });
+
+  it('a line a module submits with remember joins the history, and stays off the turn', async () => {
+    const r = recorder();
+    r.release();
+    r.ctx().submit('forwarded line', { remember: true });
+    await tick();
+    expect(r.got.calls[0]?.turn).not.toHaveProperty('remember');
+    const count = (line: string) => (r.lastFrame() ?? '').split(line).length - 1;
+    r.stdin.write(UP);
+    await tick();
+    expect(count('› forwarded line')).toBe(2);
+  });
 });
 
 describe('the app draws its own ask and answer frames', () => {
