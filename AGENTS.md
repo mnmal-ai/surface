@@ -1,6 +1,6 @@
 # surface
 
-A pluggable terminal UI base on Ink 7 and React 19. The README maps the packages, and CONTRIBUTING.md covers PRs and labels.
+A pluggable terminal UI base on Ink 8 and React 19. The README maps the packages, and CONTRIBUTING.md covers PRs and labels.
 
 ## Layout
 

@@ -1,6 +1,6 @@
 # surface
 
-A pluggable terminal UI base (Ink 7 + React 19). Apps compose modules at build time:
+A pluggable terminal UI base (Ink 8 + React 19). Apps compose modules at build time:
 
     const app = createApp({ theme: marathon, modules: [ask, schema, status] });
     await app.run();

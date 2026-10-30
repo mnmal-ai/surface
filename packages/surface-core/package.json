@@ -1,7 +1,7 @@
 {
   "name": "@mnmal-ai/surface-core",
   "version": "0.14.6",
-  "description": "Pluggable terminal UI base on Ink 7 + React 19: module registry, createApp, the turn engine and the shell.",
+  "description": "Pluggable terminal UI base on Ink 8 + React 19: module registry, createApp, the turn engine and the shell.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -33,7 +33,7 @@
     "@mnmal-ai/surface-theme": "workspace:*"
   },
   "peerDependencies": {
-    "ink": "^7.1.1",
+    "ink": "^8.0.0",
     "react": "^19.3.0"
   },
   "devDependencies": {

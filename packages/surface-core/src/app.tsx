@@ -411,7 +411,9 @@ export function createApp(opts: AppOptions): {
   function App({ columns, rows }: AppProps): ReactElement {
     const { exit } = useApp();
     // The terminal as it is now, re-read on resize so views re-render at the new size.
-    const { stdout } = useStdout();
+    // Ink types it as any writable; on a terminal it is a tty.WriteStream, and off one these are unset.
+    const stdout = useStdout().stdout as NodeJS.WritableStream &
+      Partial<Pick<NodeJS.WriteStream, 'columns' | 'rows' | 'isTTY'>>;
     const [term, setTerm] = useState(() => ({
       columns: stdout.columns ?? 120,
       rows: stdout.rows ?? 30
