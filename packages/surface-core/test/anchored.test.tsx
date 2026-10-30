@@ -44,7 +44,7 @@ function onTerminal(anchored: boolean) {
     exitOnCtrlC: false
   });
   const wipes = () => writes.filter((w) => w.includes(CLEAR_PANE)).length;
-  return { ...h, out, wipes, app };
+  return { ...h, out, writes, wipes, app };
 }
 
 describe('a bottom-anchored pane', () => {
@@ -87,6 +87,32 @@ describe('a bottom-anchored pane', () => {
     on.ctx().close();
     await tick();
     expect(on.wipes()).toBe(before + 1);
+    on.app.unmount();
+  });
+
+  it('a re-lay reprints only the newest REPRINT_LINES, after a note for what it left out', async () => {
+    const on = onTerminal(true);
+    await tick();
+    // 60 entries of 20 lines: 1200 lines, over the 1000-line budget.
+    for (let i = 0; i < 60; i++) {
+      on.ctx().print(`ENTRY-${String(i).padStart(2, '0')}\n${'.\n'.repeat(19).trimEnd()}`);
+    }
+    await tick(100);
+    on.ctx().open('p', {});
+    await tick();
+    on.ctx().close();
+    await tick(100);
+    const after = on.writes.slice(on.writes.findLastIndex((w) => w.includes(CLEAR_PANE))).join('');
+    expect(after).toContain('earlier entries not reprinted');
+    expect(after).not.toContain('ENTRY-00');
+    expect(after).toContain('ENTRY-59');
+    // Every entry is still in the transcript; only the reprint is capped.
+    expect(
+      on
+        .ctx()
+        .transcript()
+        .committed.filter((e) => e.kind === 'note')
+    ).toHaveLength(60);
     on.app.unmount();
   });
 

@@ -65,6 +65,25 @@ export function liveShrink(prev: LiveMeasure | null, now: LiveMeasure): number {
   return Math.max(0, prev.height - now.height);
 }
 
+/**
+ * The most lines a re-lay reprints. Printing blocks input for every line (about 0.17 ms each in
+ * Ink's output step), so a re-lay of a long transcript keeps only its newest entries.
+ */
+export const REPRINT_LINES = 1000;
+
+/**
+ * Where a re-lay starts reprinting, given each committed entry's height: the newest entries that
+ * fit `budget` lines, and always the newest one, however tall.
+ */
+export function reprintStart(heights: readonly number[], budget: number): number {
+  let lines = 0;
+  for (let i = heights.length - 1; i >= 0; i--) {
+    lines += heights[i] ?? 1;
+    if (lines > budget) return Math.min(i + 1, heights.length - 1);
+  }
+  return 0;
+}
+
 export interface PrepareTerminalOptions {
   /** `#rrggbb`, or `none` to leave the background alone. Default {@link DEFAULT_GROUND}. */
   readonly ground?: string | undefined;

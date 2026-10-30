@@ -67,7 +67,9 @@ import {
   liveShrink,
   type PrepareTerminalOptions,
   prepareTerminal,
-  reflowSequence
+  REPRINT_LINES,
+  reflowSequence,
+  reprintStart
 } from './terminal.js';
 import {
   type AnswerEntry,
@@ -258,6 +260,24 @@ function Safe(props: { module: string; theme: Theme; render: () => ReactNode }):
   );
 }
 
+/** A committed entry as `Static` prints it, recording its height for the next re-lay's budget. */
+function Printed(props: {
+  id: string;
+  heights: Map<string, number>;
+  paddingX: number;
+  children: ReactNode;
+}): ReactElement {
+  const ref = useRef<DOMElement>(null);
+  useEffect(() => {
+    if (ref.current !== null) props.heights.set(props.id, measureElement(ref.current).height);
+  });
+  return (
+    <Box ref={ref} paddingX={props.paddingX} flexDirection="column">
+      {props.children}
+    </Box>
+  );
+}
+
 const ERROR_KIND = 'core.error';
 const CANCELLED_KIND = 'core.cancelled';
 const TOAST_MS = 3000;
@@ -404,14 +424,24 @@ export function createApp(opts: AppOptions): {
       transcriptRef.current = fn(transcriptRef.current);
       setTranscript(transcriptRef.current);
     }, []);
-    // A re-lay (`anchored`): the pane wiped, then every committed entry printed again, because
+    // A re-lay (`anchored`): the pane wiped, then the committed entries printed again, because
     // `Static` is keyed by the epoch and a new one writes them all at the current width. The gaps
-    // go: each scrolled a pane that no longer exists. Both land in one render, so the old `Static`
-    // never sees its entries removed.
+    // go: each scrolled a pane that no longer exists. Only the newest REPRINT_LINES are printed,
+    // by the heights each entry measured when it was last printed. All of it lands in one render,
+    // so the old `Static` never sees its entries removed.
     const [epoch, setEpoch] = useState(0);
+    const heights = useRef(new Map<string, number>());
+    const [reprintFrom, setReprintFrom] = useState(0);
     const relayout = useCallback(() => {
       if (stdout.isTTY) stdout.write(reflowSequence(stdout.rows));
       putTranscript(dropGaps);
+      const kept = transcriptRef.current.committed;
+      setReprintFrom(
+        reprintStart(
+          kept.map((e) => heights.current.get(e.key) ?? 1),
+          REPRINT_LINES
+        )
+      );
       setEpoch((e) => e + 1);
     }, [stdout, putTranscript]);
     useEffect(() => {
@@ -1289,13 +1319,27 @@ export function createApp(opts: AppOptions): {
       }
       return <Text key={e.key}>{'\n'.repeat(Math.max(0, e.lines - 1))}</Text>;
     };
+    // What this epoch's `Static` prints: past a capped re-lay, a note for what it left out, then
+    // the rest. Fixed per epoch, so the list only ever grows at its end.
+    const printed: Entry<Reply>[] =
+      reprintFrom === 0
+        ? (transcript.committed as Entry<Reply>[])
+        : [
+            {
+              key: `trimmed:${epoch}`,
+              kind: 'note',
+              text: `… ${reprintFrom} earlier ${reprintFrom === 1 ? 'entry' : 'entries'} not reprinted`,
+              tone: 'dim'
+            },
+            ...transcript.committed.slice(reprintFrom)
+          ];
     return (
       <Box flexDirection="column">
-        <Static key={`static:${epoch}`} items={transcript.committed as Entry<Reply>[]}>
+        <Static key={`static:${epoch}`} items={printed}>
           {(e) => (
-            <Box key={e.key} paddingX={gutter} flexDirection="column">
+            <Printed key={e.key} id={e.key} heights={heights.current} paddingX={gutter}>
               {committed(e)}
-            </Box>
+            </Printed>
           )}
         </Static>
         <Box ref={liveRef} flexDirection="row" paddingX={gutter}>

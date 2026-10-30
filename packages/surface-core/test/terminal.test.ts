@@ -8,6 +8,7 @@ import {
   prepareTerminal,
   RESET_GROUND,
   reflowSequence,
+  reprintStart,
   type TerminalProcess
 } from '../src/terminal.js';
 
@@ -119,5 +120,20 @@ describe('liveShrink — keeping the input on the last row', () => {
     expect(liveShrink(null, at(4))).toBe(0);
     expect(liveShrink(at(10, 3), at(4, 5))).toBe(0);
     expect(liveShrink(at(10, 3, 0), at(4, 3, 1))).toBe(0);
+  });
+});
+
+describe('reprintStart', () => {
+  it('keeps the newest entries that fit the budget', () => {
+    expect(reprintStart([], 10)).toBe(0);
+    expect(reprintStart([3, 3, 3], 10)).toBe(0);
+    expect(reprintStart([3, 3, 3, 3], 10)).toBe(1);
+    expect(reprintStart([5, 1, 4, 5], 10)).toBe(1);
+    expect(reprintStart([5, 2, 4, 5], 10)).toBe(2);
+  });
+
+  it('always keeps the newest entry, however tall', () => {
+    expect(reprintStart([1, 50], 10)).toBe(1);
+    expect(reprintStart([50], 10)).toBe(0);
   });
 });
