@@ -88,6 +88,9 @@ export interface SubmitOptions {
   readonly emphasis?: string;
   /** Whatever the app's turn handler needs; the core never reads it. */
   readonly context?: unknown;
+  /** Put the line in the input history, as if typed: for a line the operator typed into a panel
+   *  that the module forwards. */
+  readonly remember?: boolean;
 }
 
 /** A turn as its handler receives it. */
@@ -129,8 +132,8 @@ export interface ModuleCtx<P> {
   transcript(): Transcript<Reply>;
   /**
    * A line sent as if typed, and routed as one: a /command runs, anything else is a turn. It stays
-   * out of the history, which holds only what the operator typed. `opts` reach the turn as its
-   * `TurnContext`.
+   * out of the history, which holds only what the operator typed, unless `opts.remember` says it
+   * was. `opts` reach the turn as its `TurnContext`.
    */
   submit(text: string, opts?: SubmitOptions): void;
   /** The panel budget now, as a panel's view is given it: for acts that page, and for commands

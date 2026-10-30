@@ -75,6 +75,7 @@ import {
   addGap,
   arriveTurn,
   commitEntry,
+  dropGaps,
   type Entry,
   emptyTranscript,
   type Flight as HeldAsk,
@@ -395,13 +396,24 @@ export function createApp(opts: AppOptions): {
       columns: stdout.columns ?? 120,
       rows: stdout.rows ?? 30
     }));
+    const [transcript, setTranscript] = useState<Transcript<Reply>>(() => emptyTranscript<Reply>());
+    // ctx.transcript() reads the transcript as committed, not as last rendered: every change goes
+    // through putTranscript, which updates the ref before React hears of it.
+    const transcriptRef = useRef(transcript);
+    const putTranscript = useCallback((fn: (t: Transcript<Reply>) => Transcript<Reply>) => {
+      transcriptRef.current = fn(transcriptRef.current);
+      setTranscript(transcriptRef.current);
+    }, []);
     // A re-lay (`anchored`): the pane wiped, then every committed entry printed again, because
-    // `Static` is keyed by the epoch and a new one writes them all at the current width.
+    // `Static` is keyed by the epoch and a new one writes them all at the current width. The gaps
+    // go: each scrolled a pane that no longer exists. Both land in one render, so the old `Static`
+    // never sees its entries removed.
     const [epoch, setEpoch] = useState(0);
     const relayout = useCallback(() => {
       if (stdout.isTTY) stdout.write(reflowSequence(stdout.rows));
+      putTranscript(dropGaps);
       setEpoch((e) => e + 1);
-    }, [stdout]);
+    }, [stdout, putTranscript]);
     useEffect(() => {
       const laidOut = { columns: stdout.columns ?? 120, rows: stdout.rows ?? 30 };
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -441,14 +453,6 @@ export function createApp(opts: AppOptions): {
     // ctx.size() reads the size the last render laid out.
     const sizeRef = useRef(panelSize);
     sizeRef.current = panelSize;
-    const [transcript, setTranscript] = useState<Transcript<Reply>>(() => emptyTranscript<Reply>());
-    // ctx.transcript() reads the transcript as committed, not as last rendered: every change goes
-    // through putTranscript, which updates the ref before React hears of it.
-    const transcriptRef = useRef(transcript);
-    const putTranscript = useCallback((fn: (t: Transcript<Reply>) => Transcript<Reply>) => {
-      transcriptRef.current = fn(transcriptRef.current);
-      setTranscript(transcriptRef.current);
-    }, []);
     const [live, setLive] = useState<ReadonlyMap<number, Reply>>(new Map());
     const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
     const [, setHistory] = useState<HistoryState>(EMPTY_HISTORY);
@@ -706,7 +710,7 @@ export function createApp(opts: AppOptions): {
     );
 
     // `sent` is present for a line a module submitted (ctx.submit), absent for one the operator
-    // typed: only a typed line joins the history.
+    // typed: only a typed line joins the history, or one its module says was typed.
     const handleLine = useCallback(
       (line: string, sent?: SubmitOptions) => {
         const text = line.trim();
@@ -736,7 +740,9 @@ export function createApp(opts: AppOptions): {
           return;
         }
         if (text === '') return;
-        if (sent === undefined) putHistory(remember(historyRef.current, text));
+        if (sent === undefined || sent.remember === true) {
+          putHistory(remember(historyRef.current, text));
+        }
         const route = routeInput(text, registry, opts.defaultTurn);
         if (route.kind === 'command') {
           Promise.resolve()
@@ -1285,12 +1291,7 @@ export function createApp(opts: AppOptions): {
     };
     return (
       <Box flexDirection="column">
-        <Static
-          key={`static:${epoch}`}
-          items={(transcript.committed as Entry<Reply>[]).filter(
-            (e) => e.kind !== 'gap' || e.epoch === epoch
-          )}
-        >
+        <Static key={`static:${epoch}`} items={transcript.committed as Entry<Reply>[]}>
           {(e) => (
             <Box key={e.key} paddingX={gutter} flexDirection="column">
               {committed(e)}
