@@ -119,9 +119,6 @@ export function composeModules(modules: readonly AnyModule[]): Registry {
           );
         }
       }
-      if (def.escape !== undefined && def.submit === undefined) {
-        problems.push(`${key} handles escape without submit, which only an input panel may`);
-      }
       if (def.mask === true && def.submit === undefined) {
         problems.push(`${key} masks its input without submit, which only an input panel may`);
       }

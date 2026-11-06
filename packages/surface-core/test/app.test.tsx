@@ -1708,3 +1708,62 @@ describe('the app draws its own ask and answer frames', () => {
     expect(r.lastFrame()).toContain('echo: hi');
   });
 });
+
+describe('panel hooks for a pager', () => {
+  type P = { t: { typed: string; steps: number }; other: Record<string, never> };
+  function hooked() {
+    const got: { ctx?: ModuleCtx<P> } = {};
+    const mod = defineModule<P>('test.hooks', {
+      init: (ctx) => {
+        got.ctx = ctx;
+        return undefined;
+      },
+      panels: {
+        t: {
+          view: ({ state }) => `typed=${state.typed} steps=${state.steps}`,
+          text: (s, text) => ({ ...s, typed: s.typed + text }),
+          escape: (s) => (s.steps > 0 ? { ...s, steps: s.steps - 1 } : undefined)
+        },
+        other: { view: () => 'OTHER' }
+      }
+    });
+    const { App } = createApp({ theme: defaultTheme, modules: [mod] });
+    const r = render(<App columns={100} />);
+    return { ...r, ctx: () => got.ctx as ModuleCtx<P>, frame: () => r.lastFrame() ?? '' };
+  }
+
+  it('a panel with text gets the keys typed at it', async () => {
+    const h = hooked();
+    await tick();
+    h.ctx().open('t', { typed: '', steps: 0 });
+    await tick();
+    h.stdin.write('q');
+    await tick();
+    h.stdin.write('r');
+    await tick();
+    expect(h.frame()).toContain('typed=qr');
+  });
+
+  it('escape on a panel without submit steps back while its hook returns a state', async () => {
+    const h = hooked();
+    await tick();
+    h.ctx().open('t', { typed: '', steps: 1 });
+    await tick();
+    h.stdin.write(ESC);
+    await tick();
+    expect(h.frame()).toContain('steps=0');
+    h.stdin.write(ESC);
+    await tick();
+    expect(h.frame()).not.toContain('typed=');
+  });
+
+  it('panelOpen says whether a panel is open, as ifNoneOpen sees it', async () => {
+    const h = hooked();
+    await tick();
+    expect(h.ctx().panelOpen()).toBe(false);
+    h.ctx().open('other', {});
+    expect(h.ctx().panelOpen()).toBe(true);
+    h.ctx().close();
+    expect(h.ctx().panelOpen()).toBe(false);
+  });
+});

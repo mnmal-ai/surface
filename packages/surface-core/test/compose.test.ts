@@ -190,8 +190,8 @@ describe('an input panel', () => {
   it('may handle escape when it owns the input line', () => {
     expect(() => composeModules([input(true)])).not.toThrow();
   });
-  it('may not handle escape otherwise: esc must always close it', () => {
-    expect(() => composeModules([input(false)])).toThrow(/escape without submit/);
+  it('any panel may handle escape, to step back rather than close', () => {
+    expect(() => composeModules([input(false)])).not.toThrow();
   });
   it('refuses mask without submit', () => {
     const m = defineModule<{ p: Record<string, never> }>('test.m', {

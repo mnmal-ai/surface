@@ -114,6 +114,8 @@ export interface ModuleCtx<P> {
     state: P[K],
     opts?: { readonly ifNoneOpen?: boolean }
   ): void;
+  /** Whether any panel is open now, this module's or another's: what `ifNoneOpen` checks. */
+  panelOpen(): boolean;
   update<K extends keyof P & string>(panel: K, fn: (state: P[K]) => P[K]): void;
   close(): void;
   print(text: string, tone?: Tone): void;
@@ -205,9 +207,9 @@ export interface PanelDef<S, P = unknown> {
    */
   readonly submit?: (state: S, line: string, ctx: ModuleCtx<P>) => S | undefined;
   /**
-   * Escape on a panel with `submit`: return a state to stay open with it (abandoning an edit in
-   * progress), or undefined to close as usual. A different panel opened here with `ctx.open`
-   * replaces this one rather than being closed with it. Only for a panel with `submit`.
+   * Escape: return a state to stay open with it (abandoning an edit, or stepping back), or
+   * undefined to close as usual. A different panel opened here with `ctx.open` replaces this one
+   * rather than being closed with it.
    */
   readonly escape?: (state: S, ctx: ModuleCtx<P>) => S | undefined;
   /**
@@ -220,6 +222,12 @@ export interface PanelDef<S, P = unknown> {
    * printable single-character key in `keymap`.
    */
   readonly mask?: boolean;
+  /**
+   * Typed text the keymap does not bind: a printable key, or a pasted chunk whole. Without it such
+   * keys are ignored. Not for a panel that keeps the draft live (`confirm`, `submit`), where they
+   * edit the line. Return the next state, or undefined to keep it.
+   */
+  readonly text?: (state: S, text: string, ctx: ModuleCtx<P>) => S | undefined;
   /** act -> handler. Returning a state replaces the panel's state. */
   readonly on?: Readonly<Record<string, (state: S, ctx: ModuleCtx<P>) => S | undefined>>;
 }
