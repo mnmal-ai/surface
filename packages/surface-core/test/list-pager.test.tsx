@@ -244,4 +244,29 @@ describe('the pager', () => {
     await t.send(ENTER);
     expect(t.frame()).not.toContain('DETAIL');
   });
+
+  it('an answer that lands while an older list is paged is the one /list reopens', async () => {
+    let n = 0;
+    const t = start(() => {
+      n += 1;
+      return { list: { heading: `list ${n}`, rows: rows(15) } };
+    }, 120);
+    await t.send('q');
+    await t.send(ENTER);
+    await until(() => expect(t.frame()).toContain('📋 List list 1'));
+    await t.send(ESC);
+    // A slow question; while it runs, the operator reviews the older list.
+    await t.send('q');
+    await t.send(ENTER);
+    await t.send('/list');
+    await t.send(ENTER);
+    await until(() => expect(t.frame()).toContain('📋 List list 1'));
+    await until(() => expect(t.frame()).toContain('…and 5 more — /list to page through them'));
+    await t.send(DOWN);
+    await t.send(ESC);
+    await until(() => expect(t.frame()).not.toContain('📋 List'));
+    await t.send('/list');
+    await t.send(ENTER);
+    await until(() => expect(t.frame()).toContain('📋 List list 2'));
+  });
 });

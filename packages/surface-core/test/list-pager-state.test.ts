@@ -5,9 +5,12 @@ import {
   backspace,
   cursorRow,
   endFilter,
+  type ListStep,
   move,
   type PagerState,
   pagerAt,
+  placement,
+  push,
   scrollDetail,
   startFilter,
   turn,
@@ -91,13 +94,13 @@ describe('Esc steps back', () => {
 
   it('from a detail: back to the list at the same page and row', () => {
     const at = move(move(pagerAt(list(12), {}), 1, 5), 1, 5);
-    const detail: PagerState = {
-      steps: [
-        ...at.steps,
-        { kind: 'detail', row: rows(1)[0] as ListRow, hooks: {}, detail: 'loading', scroll: 0 }
-      ],
-      token: at.token + 1
-    };
+    const detail = push(at, {
+      kind: 'detail',
+      row: rows(1)[0] as ListRow,
+      hooks: {},
+      detail: 'loading',
+      scroll: 0
+    });
     const s = back(detail) as PagerState;
     expect(top(s)).toMatchObject({ kind: 'list', page: 0, cursor: 2 });
     expect(s.token).not.toBe(detail.token);
@@ -127,5 +130,23 @@ describe('a detail', () => {
     expect(top(s)).toMatchObject({ scroll: 0 });
     for (let i = 0; i < 9; i++) s = scrollDetail(s, 1, 3);
     expect(top(s)).toMatchObject({ scroll: 3 });
+  });
+});
+
+describe('review fixes', () => {
+  it('the row shown under the cursor is the one it points at, at any page size', () => {
+    let s = pagerAt(list(40), {});
+    for (let i = 0; i < 23; i++) s = move(s, 1, 10);
+    expect(cursorRow(s)?.key).toBe('k23');
+    // The panel shrank: five rows a page now.
+    expect(placement(top(s) as ListStep, 5)).toEqual({ page: 4, cursor: 3 });
+    s = turn(s, 1, 5);
+    expect(cursorRow(s)?.key).toBe('k25');
+  });
+
+  it('tokens are never reused, across lists', () => {
+    const a = push(pagerAt(list(3), {}), { kind: 'loading-related', row: rows(1)[0] as ListRow });
+    const b = push(pagerAt(list(3), {}), { kind: 'loading-related', row: rows(1)[0] as ListRow });
+    expect(b.token).not.toBe(a.token);
   });
 });

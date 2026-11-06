@@ -54,6 +54,7 @@ export {
   move,
   type PagerState,
   pagerAt,
+  placement,
   push,
   type RelatedLoadingStep,
   type Step,

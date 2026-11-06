@@ -26,6 +26,7 @@ import {
   move,
   type PagerState,
   pagerAt,
+  placement,
   push,
   type Step,
   scrollDetail,
@@ -111,7 +112,9 @@ function ListPage({
   const shown = visibleRows(step);
   const per = pageSizeFor(size.rows);
   const pages = Math.max(1, Math.ceil(shown.length / per));
-  const page = Math.min(step.page, pages - 1);
+  // Placed by the row it points at, so a resize never highlights one row and opens another.
+  const at = placement(step, per);
+  const page = Math.min(at.page, pages - 1);
   const slice = shown.slice(page * per, page * per + per);
   const total = step.list.total;
   const of =
@@ -143,7 +146,7 @@ function ListPage({
           <ListRows
             lines={listLines(slice, size.columns, page * per + 1)}
             theme={theme}
-            cursor={step.cursor}
+            cursor={at.cursor}
           />
         )}
       </Box>
@@ -272,10 +275,16 @@ export function listPager(): {
   // The last long list, as the operator left its first step: what `/list` reopens.
   let last: PagerState | null = null;
 
-  /** Keeps the first step as the operator left it, and returns the state to show. */
+  /**
+   * Keeps the first step as the operator left it, and returns the state to show. Only for the
+   * list `/list` would reopen: an older list paged while a newer one landed must not take its place.
+   */
   const keep = (s: PagerState): PagerState => {
     const first = s.steps[0];
-    if (first !== undefined) last = { steps: [first], token: s.token };
+    const was = last?.steps[0];
+    if (first?.kind === 'list' && was?.kind === 'list' && first.list === was.list) {
+      last = { steps: [first], token: s.token };
+    }
     return s;
   };
   const top = (s: PagerState): Step | undefined => s.steps[s.steps.length - 1];

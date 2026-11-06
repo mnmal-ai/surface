@@ -61,9 +61,17 @@ export const listStep = (list: ListSpec, hooks: ListHooks): ListStep => ({
   size: 1
 });
 
+// One counter for every pager, so a token is never reused: a slow result started on one list can
+// never land on another.
+let tokens = 0;
+const fresh = (): number => {
+  tokens += 1;
+  return tokens;
+};
+
 export const pagerAt = (list: ListSpec, hooks: ListHooks): PagerState => ({
   steps: [listStep(list, hooks)],
-  token: 0
+  token: fresh()
 });
 
 const top = (s: PagerState): Step | undefined => s.steps[s.steps.length - 1];
@@ -78,8 +86,14 @@ const onList = (s: PagerState, fn: (l: ListStep) => ListStep): PagerState => {
 
 export const push = (s: PagerState, step: Step): PagerState => ({
   steps: [...s.steps, step],
-  token: s.token + 1
+  token: fresh()
 });
+
+/** Where the cursor's row falls at page size `per`, whatever size it was last moved with. */
+export function placement(l: ListStep, per: number): { page: number; cursor: number } {
+  const at = l.page * l.size + l.cursor;
+  return { page: Math.floor(at / per), cursor: at % per };
+}
 
 /** The list's rows as the filter leaves them. */
 export const visibleRows = (l: ListStep): ListRow[] => filterRows(l.list.rows, l.filter);
@@ -107,9 +121,10 @@ export function move(s: PagerState, delta: -1 | 1, pageSize: number): PagerState
 export function turn(s: PagerState, delta: -1 | 1, pageSize: number): PagerState {
   return onList(s, (l) => {
     const pages = Math.max(1, Math.ceil(visibleRows(l).length / pageSize));
+    const { page } = placement(l, pageSize);
     return {
       ...l,
-      page: Math.min(Math.max(0, l.page + delta), pages - 1),
+      page: Math.min(Math.max(0, page + delta), pages - 1),
       cursor: 0,
       size: pageSize
     };
@@ -142,7 +157,7 @@ export function back(s: PagerState): PagerState | undefined {
   if (t.kind === 'list' && (t.filtering || t.filter !== '')) {
     return withTop(s, { ...t, filter: '', filtering: false, page: 0, cursor: 0 });
   }
-  if (s.steps.length > 1) return { steps: s.steps.slice(0, -1), token: s.token + 1 };
+  if (s.steps.length > 1) return { steps: s.steps.slice(0, -1), token: fresh() };
   return undefined;
 }
 
