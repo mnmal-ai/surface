@@ -49,6 +49,7 @@ export {
 } from './history.js';
 export { normaliseKeySpec } from './key-spec.js';
 export { type KeyState, keySpecOf, type Route, resolveKey } from './keys.js';
+export { INLINE_LIST_ROWS, LIST_REPLY_KIND, listPager, pageSizeFor } from './list-pager.js';
 export {
   back,
   backspace,
