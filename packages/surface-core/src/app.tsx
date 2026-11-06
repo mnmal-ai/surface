@@ -436,7 +436,8 @@ export function createApp(opts: AppOptions): {
     const { exit } = useApp();
     // The terminal as it is now, re-read on resize so views re-render at the new size.
     // Ink types it as any writable; on a terminal it is a tty.WriteStream, and off one these are unset.
-    const stdout = useStdout().stdout as NodeJS.WritableStream &
+    const ink = useStdout();
+    const stdout = ink.stdout as NodeJS.WritableStream &
       Partial<Pick<NodeJS.WriteStream, 'columns' | 'rows' | 'isTTY'>>;
     // Full-screen needs a terminal; off one the shell prints inline as it always has.
     const full = fs.on && stdout.isTTY === true;
@@ -463,7 +464,9 @@ export function createApp(opts: AppOptions): {
     const heights = useRef(new Map<string, number>());
     const [reprintFrom, setReprintFrom] = useState(0);
     const relayout = useCallback(() => {
-      if (stdout.isTTY) stdout.write(reflowSequence(stdout.rows));
+      // Through Ink, which redraws its frame after the wipe: written past it, Ink would still think
+      // the frame is on screen and skip an unchanged one, leaving the pane blank.
+      if (stdout.isTTY) ink.write(reflowSequence(stdout.rows));
       putTranscript(dropGaps);
       const kept = transcriptRef.current.committed;
       setReprintFrom(
@@ -473,7 +476,7 @@ export function createApp(opts: AppOptions): {
         )
       );
       setEpoch((e) => e + 1);
-    }, [stdout, putTranscript]);
+    }, [stdout, ink, putTranscript]);
     useEffect(() => {
       const laidOut = { columns: stdout.columns ?? 120, rows: stdout.rows ?? 30 };
       let timer: ReturnType<typeof setTimeout> | undefined;
