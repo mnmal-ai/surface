@@ -71,6 +71,8 @@ function fitSpans(spans: readonly ListSpan[], max: number): ListSpan[] {
     const t = cutToWidth(s.text, left);
     out.push(s.em === true ? { text: t, em: true } : { text: t });
     left -= cellWidth(t);
+    // A span cut short ends the name: later text must not fill the cell a wide character left.
+    if (t !== s.text) break;
   }
   out.push({ text: '…' });
   return out;

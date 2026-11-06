@@ -269,4 +269,30 @@ describe('the pager', () => {
     await t.send(ENTER);
     await until(() => expect(t.frame()).toContain('📋 List list 2'));
   });
+
+  it('a related search that finds nothing says so, not that a filter matched nothing', async () => {
+    const t = start(() => ({
+      list: list(20),
+      hooks: { related: () => ({ heading: 'related to k1', rows: [] }) }
+    }));
+    await t.send('q');
+    await t.send(ENTER);
+    await until(() => expect(t.frame()).toContain('📋 List open todos'));
+    await t.send('r');
+    await until(() => expect(t.frame()).toContain('📋 List related to k1'));
+    expect(t.frame()).toContain('nothing here');
+    expect(t.frame()).not.toContain('no rows match');
+  });
+
+  it('a pasted filter keeps to one clean line', async () => {
+    const t = start(() => ({ list: list(20) }));
+    await t.send('q');
+    await t.send(ENTER);
+    await until(() => expect(t.frame()).toContain('📋 List'));
+    await t.send('/');
+    await t.send('ev\nen\u001b[31m');
+    // The line break became a space, and the colour escape left nothing behind.
+    await until(() => expect(t.frame()).toContain('filter: ev en▌'));
+    expect(t.frame()).not.toContain('[31m');
+  });
 });
