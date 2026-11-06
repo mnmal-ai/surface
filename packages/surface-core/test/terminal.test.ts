@@ -9,7 +9,9 @@ import {
   RESET_GROUND,
   reflowSequence,
   reprintStart,
-  type TerminalProcess
+  type TerminalProcess,
+  WHEEL_ARROWS_OFF,
+  WHEEL_ARROWS_ON
 } from '../src/terminal.js';
 
 function fakeProc() {
@@ -94,6 +96,44 @@ describe('prepareTerminal', () => {
     prepareTerminal(out, { ground: 'none' }, proc)();
     expect(written).toEqual([`${CLEAR_PANE}\n\n\n\n`]);
     expect(listeners.size).toBe(0);
+  });
+});
+
+describe('full-screen preparation', () => {
+  it('ground and the wheel off, never a clear or an anchor', () => {
+    expect(prepareSequence(30, { fullscreen: true, ground: '#000000' })).toBe(
+      `\x1b]11;#000000\x07${WHEEL_ARROWS_OFF}`
+    );
+    expect(
+      prepareSequence(30, { fullscreen: true, clear: true, anchor: true, ground: 'none' })
+    ).toBe(WHEEL_ARROWS_OFF);
+  });
+  it('the wheel modes are DEC private mode 1007', () => {
+    expect(WHEEL_ARROWS_OFF).toBe('\x1b[?1007l');
+    expect(WHEEL_ARROWS_ON).toBe('\x1b[?1007h');
+  });
+  it('with no ground it still restores the wheel on exit', () => {
+    const { out, written } = fakeOut();
+    const { proc, listeners } = fakeProc();
+    prepareTerminal(out, { fullscreen: true, ground: 'none' }, proc);
+    listeners.get('exit')?.();
+    expect(written.at(-1)).toBe(WHEEL_ARROWS_ON);
+  });
+  it('a signal exits through the restore, wheel included', () => {
+    const { out, written } = fakeOut();
+    const { proc, listeners, exits } = fakeProc();
+    prepareTerminal(out, { fullscreen: true, ground: 'none' }, proc);
+    listeners.get('SIGTERM')?.();
+    expect(exits).toEqual([143]);
+    expect(written).toContain(WHEEL_ARROWS_ON);
+  });
+  it('restore puts the ground back, then the wheel, once', () => {
+    const { out, written } = fakeOut();
+    const { proc } = fakeProc();
+    const restore = prepareTerminal(out, { fullscreen: true, ground: '#000000' }, proc);
+    restore();
+    restore();
+    expect(written.slice(1)).toEqual([RESET_GROUND + WHEEL_ARROWS_ON]);
   });
 });
 

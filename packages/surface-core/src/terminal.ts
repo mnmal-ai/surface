@@ -1,7 +1,9 @@
 // What an app does to the terminal itself before the first frame, as pure byte sequences so they
 // are tested rather than trusted.
 //
-// No alternate screen buffer: it would throw away the terminal's native scrolling, search and copy.
+// Full-screen mode (the default) runs in the alternate screen: the terminal's native scrollback is
+// given up for an input that stays pinned while the transcript scrolls. The inline mode, with
+// native scrollback, is `SURFACE_FULLSCREEN=off`.
 
 import { DEFAULT_GROUND } from '@mnmal-ai/surface-theme';
 
@@ -84,6 +86,15 @@ export function reprintStart(heights: readonly number[], budget: number): number
   return 0;
 }
 
+/**
+ * DEC private mode 1007 ("alternate scroll"): off, a terminal stops turning the mouse wheel into
+ * Up/Down in the alternate screen, which would walk input history. No mouse reporting is enabled,
+ * so drag-select stays the terminal's.
+ */
+export const WHEEL_ARROWS_OFF = '\x1b[?1007l';
+/** Restores 1007. shortcut: assumes it was on (most terminals' default; xterm's is off); query it with DECRQM if that bites. */
+export const WHEEL_ARROWS_ON = '\x1b[?1007h';
+
 export interface PrepareTerminalOptions {
   /** `#rrggbb`, or `none` to leave the background alone. Default {@link DEFAULT_GROUND}. */
   readonly ground?: string | undefined;
@@ -91,6 +102,8 @@ export interface PrepareTerminalOptions {
   readonly clear?: boolean;
   /** Bottom-anchor the input. Default true. */
   readonly anchor?: boolean;
+  /** Full-screen: turn the wheel's arrow keys off (restored on exit), and never clear or anchor. */
+  readonly fullscreen?: boolean;
 }
 
 export interface TerminalOut {
@@ -104,8 +117,10 @@ export function prepareSequence(
   rows: number | undefined,
   opts: PrepareTerminalOptions = {}
 ): string {
+  const ground = groundSequence(opts.ground) ?? '';
+  if (opts.fullscreen === true) return ground + WHEEL_ARROWS_OFF;
   return (
-    (groundSequence(opts.ground) ?? '') +
+    ground +
     (opts.clear === false ? '' : CLEAR_PANE) +
     (opts.anchor === false ? '' : anchorPadding(rows))
   );
@@ -119,8 +134,8 @@ export interface TerminalProcess {
 }
 
 /**
- * Ground, clear and anchor the terminal before `render`. Returns a restore function that puts the
- * terminal's background back. It is also registered on `exit`, and SIGHUP / SIGTERM / SIGINT exit
+ * Ground, clear and anchor the terminal before `render` (in full-screen: ground and the wheel).
+ * Returns a restore function that puts the terminal's background and wheel back. It is also registered on `exit`, and SIGHUP / SIGTERM / SIGINT exit
  * through it, since their default action kills the process with no `exit` event (under Ink's raw
  * mode ctrl+c is input, so SIGINT only arrives from outside: `kill -INT`, a supervisor, tmux).
  * A terminal left black is worse than any rendering bug. A no-op off a TTY.
@@ -132,12 +147,15 @@ export function prepareTerminal(
 ): () => void {
   if (out.isTTY !== true) return () => {};
   out.write(prepareSequence(out.rows, opts));
-  if (groundSequence(opts.ground) === null) return () => {};
+  const back =
+    (groundSequence(opts.ground) === null ? '' : RESET_GROUND) +
+    (opts.fullscreen === true ? WHEEL_ARROWS_ON : '');
+  if (back === '') return () => {};
   let restored = false;
   const restore = () => {
     if (restored) return;
     restored = true;
-    out.write(RESET_GROUND);
+    out.write(back);
   };
   proc.once('exit', restore);
   proc.once('SIGHUP', () => proc.exit(129));

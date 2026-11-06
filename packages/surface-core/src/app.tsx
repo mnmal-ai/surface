@@ -381,10 +381,15 @@ interface AppProps {
 
 /** What `run()` prepares the terminal with, or `null` when the host has prepared it already. */
 export function runTerminalOptions(
-  opts: Pick<AppOptions, 'anchored' | 'terminal'>
+  opts: Pick<AppOptions, 'anchored' | 'terminal'>,
+  fullscreen: boolean
 ): PrepareTerminalOptions | null {
   if (opts.terminal === false) return null;
-  return { anchor: opts.anchored === true, ...opts.terminal };
+  return {
+    anchor: opts.anchored === true,
+    ...opts.terminal,
+    ...(fullscreen ? { fullscreen } : {})
+  };
 }
 
 export function createApp(opts: AppOptions): {
@@ -1507,7 +1512,7 @@ export function createApp(opts: AppOptions): {
     async run() {
       // Ground, clear and anchor the terminal before the first frame: the app's own re-lays only
       // redo a pane that was prepared this way.
-      const prepare = runTerminalOptions(opts);
+      const prepare = runTerminalOptions(opts, false);
       const restore = prepare === null ? () => {} : prepareTerminal(process.stdout, prepare);
       const instance = render(<App />, { exitOnCtrlC: false });
       await instance.waitUntilExit();

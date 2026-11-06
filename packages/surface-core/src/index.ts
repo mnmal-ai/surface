@@ -107,7 +107,9 @@ export {
   RESET_GROUND,
   reflowSequence,
   type TerminalOut,
-  type TerminalProcess
+  type TerminalProcess,
+  WHEEL_ARROWS_OFF,
+  WHEEL_ARROWS_ON
 } from './terminal.js';
 export {
   type AnswerEntry,
