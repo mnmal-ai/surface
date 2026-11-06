@@ -191,6 +191,11 @@ export interface PanelDef<S, P = unknown> {
     /** The room the panel has: the columns left beside the rail, and `AppOptions.panelRows`. */
     readonly size: Size;
   }) => ReactNode;
+  /** Columns each side and rows top and bottom between the panel's edge and its view. Defaults
+   *  to 4 and 1; the insets come out of the `size` the view is handed. */
+  readonly inset?: { readonly x: number; readonly y: number };
+  /** The panel's background colour. Defaults to `theme.color.raised`; `''` paints none. */
+  readonly ground?: string;
   readonly keymap?: readonly { readonly key: KeySpec; readonly act: string }[];
   /**
    * Letter, then Enter (`ConfirmBinding`). A panel that declares any keeps the draft live under

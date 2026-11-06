@@ -49,6 +49,7 @@ import { type KeyState, resolveKey } from './keys.js';
 import type {
   Key,
   ModuleCtx,
+  PanelDef,
   Reply,
   Size,
   SubmitOptions,
@@ -323,6 +324,13 @@ const OVERLAY_PAD_Y = 1;
 const PANEL_PAD_X = 4;
 const PANEL_PAD_Y = 1;
 
+/** What a panel view may draw in: its insets, its own or the default, come out of the outer size. */
+function panelInner(outer: Size, def: PanelDef<unknown, unknown> | undefined): Size {
+  const x = def?.inset?.x ?? PANEL_PAD_X;
+  const y = def?.inset?.y ?? PANEL_PAD_Y;
+  return { columns: Math.max(1, outer.columns - 2 * x), rows: Math.max(1, outer.rows - 2 * y) };
+}
+
 interface MenuRow {
   readonly key: string;
   readonly name: string;
@@ -508,14 +516,9 @@ export function createApp(opts: AppOptions): {
       columns: Math.max(1, width - (showRail ? RAIL_COLUMNS : 0)),
       rows: Math.max(1, panelRows(height))
     };
-    // What a panel view may draw in: the panel's insets come out of its columns and rows.
-    const panelSize: Size = {
-      columns: Math.max(1, panelOuter.columns - 2 * PANEL_PAD_X),
-      rows: Math.max(1, panelOuter.rows - 2 * PANEL_PAD_Y)
-    };
-    // ctx.size() reads the size the last render laid out.
-    const sizeRef = useRef(panelSize);
-    sizeRef.current = panelSize;
+    // ctx.size() reads the outer size the last render laid out, less the open panel's insets.
+    const outerRef = useRef(panelOuter);
+    outerRef.current = panelOuter;
     const [live, setLive] = useState<ReadonlyMap<number, Reply>>(new Map());
     const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
     const [, setHistory] = useState<HistoryState>(EMPTY_HISTORY);
@@ -679,7 +682,7 @@ export function createApp(opts: AppOptions): {
       (moduleId: string): ModuleCtx<Record<string, unknown>> => ({
         theme,
         signal: appAbort.current.signal,
-        size: () => sizeRef.current,
+        size: () => panelInner(outerRef.current, defOf(overlayRef.current)),
         open: (panel, state, opts) => {
           if (disposed.current) return;
           if (!registry.panels.has(`${moduleId}/${panel}`)) {
@@ -729,7 +732,7 @@ export function createApp(opts: AppOptions): {
           return () => set.delete(safe);
         }
       }),
-      [print, say, guard, putOverlay, showToast]
+      [print, say, guard, putOverlay, showToast, defOf]
     );
 
     const runTurn = useCallback(
@@ -1460,9 +1463,9 @@ export function createApp(opts: AppOptions): {
       <>
         {panel && overlay ? (
           <Box
-            backgroundColor={theme.color.raised}
-            paddingX={PANEL_PAD_X}
-            paddingY={PANEL_PAD_Y}
+            backgroundColor={panel.ground ?? theme.color.raised}
+            paddingX={panel.inset?.x ?? PANEL_PAD_X}
+            paddingY={panel.inset?.y ?? PANEL_PAD_Y}
             flexDirection="column"
           >
             <Safe
@@ -1473,7 +1476,7 @@ export function createApp(opts: AppOptions): {
                 panel.view({
                   state: overlay.state,
                   theme,
-                  size: panelSize,
+                  size: panelInner(panelOuter, panel),
                   ...(armed !== null &&
                   armed.module === overlay.module &&
                   armed.panel === overlay.panel &&
