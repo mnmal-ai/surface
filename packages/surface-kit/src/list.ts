@@ -160,6 +160,7 @@ export function wrapCells(text: string, width: number): string[] {
   const w = Math.max(1, width);
   const out: string[] = [];
   for (const para of text.split('\n')) {
+    const start = out.length;
     let line = '';
     for (let word of para.split(' ').filter((x) => x !== '')) {
       while (cellWidth(word) > w) {
@@ -167,10 +168,12 @@ export function wrapCells(text: string, width: number): string[] {
           out.push(line);
           line = '';
         }
-        const head = cutToWidth(word, w);
+        // A character wider than the width still takes a line of its own: every pass makes progress.
+        const head = cutToWidth(word, w) || ([...word][0] ?? '');
         out.push(head);
         word = word.slice(head.length);
       }
+      if (word === '') continue;
       const next = line === '' ? word : `${line} ${word}`;
       if (cellWidth(next) <= w) line = next;
       else {
@@ -178,7 +181,8 @@ export function wrapCells(text: string, width: number): string[] {
         line = word;
       }
     }
-    out.push(line);
+    // An empty paragraph is a blank line; otherwise only what is left of the last line.
+    if (line !== '' || out.length === start) out.push(line);
   }
   return out;
 }

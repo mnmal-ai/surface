@@ -110,6 +110,9 @@ describe('wrapCells', () => {
   it('hard-cuts a word longer than the width', () => {
     expect(wrapCells('abcdefghij', 4)).toEqual(['abcd', 'efgh', 'ij']);
   });
+  it('always makes progress, even when a wide character is wider than the width', () => {
+    expect(wrapCells('東京', 1)).toEqual(['東', '京']);
+  }, 1000);
   it('keeps blank lines between paragraphs', () => {
     expect(wrapCells('a\n\nb', 10)).toEqual(['a', '', 'b']);
   });
