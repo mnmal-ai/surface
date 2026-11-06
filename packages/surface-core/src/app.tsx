@@ -551,6 +551,14 @@ export function createApp(opts: AppOptions): {
       armedRef.current = a;
       setArmed(a);
     }, []);
+    // Full-screen's viewport: where it is scrolled, and the content and viewport heights the last
+    // render measured. Mirrored in refs, as the draft is, for keys handled before a re-render.
+    const [scroll, setScroll] = useState<Scroll>(FOLLOWING);
+    const scrollRef = useRef<Scroll>(FOLLOWING);
+    const putScroll = useCallback((next: Scroll) => {
+      scrollRef.current = next;
+      setScroll(next);
+    }, []);
     const defOf = useCallback(
       (o: Overlay | null) => (o ? registry.panels.get(`${o.module}/${o.panel}`)?.def : undefined),
       []
@@ -773,6 +781,8 @@ export function createApp(opts: AppOptions): {
     // typed: only a typed line joins the history, or one its module says was typed.
     const handleLine = useCallback(
       (line: string, sent?: SubmitOptions) => {
+        // Every send, typed, chosen from the palette or pasted, brings the view back down.
+        putScroll(FOLLOWING);
         const text = line.trim();
         // A focused panel that owns the input line takes every line but a /command, and a
         // masked one every typed line. The line is an entry in the panel, not a turn, so it stays
@@ -823,7 +833,7 @@ export function createApp(opts: AppOptions): {
           print('nothing here answers that', 'warn');
         }
       },
-      [ctxFor, print, putHistory, runTurn, guard, putOverlay]
+      [ctxFor, print, putHistory, runTurn, guard, putOverlay, putScroll]
     );
     handleLineRef.current = handleLine;
 
@@ -831,24 +841,31 @@ export function createApp(opts: AppOptions): {
     // nothing printed above it, a gap of that many blank rows scrolls the pane back down, so the
     // input stays on the last row. Gaps are not counted as printed: a gap scrolls the pane by
     // exactly its own rows, so a shrink spread over two renders is still owed its second half.
-    // Full-screen's viewport: where it is scrolled, and the content and viewport heights the last
-    // render measured. Mirrored in refs, as the draft is, for keys handled before a re-render.
-    const [scroll, setScroll] = useState<Scroll>(FOLLOWING);
-    const scrollRef = useRef<Scroll>(FOLLOWING);
-    const putScroll = useCallback((next: Scroll) => {
-      scrollRef.current = next;
-      setScroll(next);
-    }, []);
     const viewportRef = useRef<DOMElement>(null);
-    const contentRef = useRef<DOMElement>(null);
+    const flightsRef = useRef<DOMElement>(null);
     const [measured, setMeasured] = useState({ content: 0, viewport: 1 });
     const measuredRef = useRef(measured);
+    // The transcript's rows: each entry's recorded height (only entries near the view are drawn,
+    // so the rest are counted, not laid out), then the turns in flight below them.
+    // shortcut: heights recorded at an older width stay until the entry is drawn again; re-measure on resize if counts drift.
+    const contentRows = useCallback((): number => {
+      let rows = 0;
+      for (const e of transcriptRef.current.committed) rows += heights.current.get(e.key) ?? 1;
+      return rows + (flightsRef.current === null ? 0 : measureElement(flightsRef.current).height);
+    }, []);
+    const viewportRows = useCallback(
+      (): number =>
+        viewportRef.current === null
+          ? measuredRef.current.viewport
+          : Math.max(1, measureElement(viewportRef.current).height),
+      []
+    );
     useEffect(() => {
-      if (!full || viewportRef.current === null || contentRef.current === null) return;
-      const now = {
-        content: measureElement(contentRef.current).height,
-        viewport: Math.max(1, measureElement(viewportRef.current).height)
-      };
+      if (!full || viewportRef.current === null) return;
+      const now = { content: contentRows(), viewport: viewportRows() };
+      // A view held at or past the bottom (the terminal grew) is following again.
+      const held = scrollRef.current.held;
+      if (held !== null && held >= Math.max(0, now.content - now.viewport)) putScroll(FOLLOWING);
       const was = measuredRef.current;
       if (now.content === was.content && now.viewport === was.viewport) return;
       measuredRef.current = now;
@@ -1149,14 +1166,8 @@ export function createApp(opts: AppOptions): {
         }
         case 'scroll': {
           // Measured now, not from the last effect: output that just landed counts.
-          const content =
-            contentRef.current === null
-              ? measuredRef.current.content
-              : measureElement(contentRef.current).height;
-          const viewport =
-            viewportRef.current === null
-              ? measuredRef.current.viewport
-              : Math.max(1, measureElement(viewportRef.current).height);
+          const content = contentRows();
+          const viewport = viewportRows();
           const step = route.act === 'page-up' ? -pageStep(viewport) : pageStep(viewport);
           putScroll(
             route.act === 'bottom'
@@ -1167,7 +1178,6 @@ export function createApp(opts: AppOptions): {
         }
         case 'submit': {
           putArmed(null);
-          putScroll(FOLLOWING);
           const line = draft.text;
           putDraft(EMPTY_DRAFT);
           putMenu(null);
@@ -1580,25 +1590,25 @@ export function createApp(opts: AppOptions): {
       const { content, viewport } = measured;
       const top = viewTop(scroll, content, viewport);
       const below = linesBelow(scroll, content, viewport);
-      // Only the newest REPRINT_LINES lines are drawn, by the heights each entry last measured:
-      // every entry drawn is laid out again on every keystroke.
-      // shortcut: a held view whose top entries age out shifts by their rows; anchor a held view to an entry key if that bites.
-      const from = reprintStart(
-        transcript.committed.map((e) => heights.current.get(e.key) ?? 1),
-        REPRINT_LINES
-      );
-      const shown: Entry<Reply>[] =
-        from === 0
-          ? (transcript.committed as Entry<Reply>[])
-          : [
-              {
-                key: `trimmed:${from}`,
-                kind: 'note',
-                text: `… ${from} earlier ${from === 1 ? 'entry' : 'entries'} not shown`,
-                tone: 'dim'
-              },
-              ...transcript.committed.slice(from)
-            ];
+      // Only entries near the view are drawn: a viewport above and two below what shows, plus any
+      // entry not yet measured (it is drawn once, out of sight, to learn its height). Everything
+      // above the first drawn entry is skipped by the content's top margin.
+      const lo = top - viewport;
+      const hi = top + 2 * viewport;
+      const shown: Entry<Reply>[] = [];
+      let at = 0;
+      let skipped: number | null = null;
+      for (const e of transcript.committed as Entry<Reply>[]) {
+        const h = heights.current.get(e.key);
+        const rows = h ?? 1;
+        if ((at + rows > lo && at < hi) || h === undefined) {
+          if (skipped === null) skipped = at;
+          shown.push(e);
+        }
+        at += rows;
+      }
+      const rowsAbove = skipped ?? at;
+      const markerText = `↓ ${below} lines below · End to jump back`;
       return (
         <Box flexDirection="row" height={height} paddingX={gutter}>
           <Box flexDirection="column" flexGrow={1}>
@@ -1610,13 +1620,15 @@ export function createApp(opts: AppOptions): {
               minHeight={1}
               overflow="hidden"
             >
-              <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={-top}>
+              <Box flexDirection="column" flexShrink={0} marginTop={-(top - rowsAbove)}>
                 {shown.map((e) => (
                   <Printed key={e.key} id={e.key} heights={heights.current} paddingX={0}>
                     {committed(e)}
                   </Printed>
                 ))}
-                {flightRows}
+                <Box ref={flightsRef} flexDirection="column" flexShrink={0}>
+                  {flightRows}
+                </Box>
               </Box>
               {panelOpen ? (
                 <Box position="absolute" bottom={0} width="100%" flexDirection="column">
@@ -1624,7 +1636,10 @@ export function createApp(opts: AppOptions): {
                 </Box>
               ) : below > 0 ? (
                 <Box position="absolute" bottom={0}>
-                  <Text color={theme.color.dim}>↓ {below} lines below · End to jump back</Text>
+                  {/* Padded to the viewport's width, so the row under it does not show through. */}
+                  <Text color={theme.color.dim} wrap="truncate">
+                    {markerText.padEnd(panelOuter.columns)}
+                  </Text>
                 </Box>
               ) : null}
             </Box>

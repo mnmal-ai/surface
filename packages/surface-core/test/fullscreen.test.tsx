@@ -4,6 +4,9 @@ import { render as inkRender } from 'ink';
 import { render } from 'ink-testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, defineModule, type ModuleCtx } from '../src/index.js';
+
+type AnyModule = Parameters<typeof createApp>[0]['modules'][number];
+
 import { echo } from './fixture.js';
 
 // Full-screen: the transcript scrolls in a viewport; the input stays on the last rows.
@@ -14,6 +17,8 @@ const PG_DN = '\x1b[6~';
 const END = '\x1b[F';
 const HOME = '\x1b[H';
 const UP = '\x1b[A';
+const marker = (f: string) => Number(/↓ (\d+) lines below/.exec(f)?.[1] ?? 0);
+const shownLines = (t: { lines: () => string[] }) => t.lines().filter((l) => /^line \d+/.test(l));
 const tick = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 
 /** ink-testing-library's harness, on a TTY: full frames (debug), and the size the app is told. */
@@ -53,15 +58,23 @@ class In extends EventEmitter {
 }
 
 type Ctx = ModuleCtx<Record<string, never>>;
+/** A module that hands the test its ctx, and counts how often its replies are drawn. */
 function holder() {
   const got: { ctx?: Ctx } = {};
+  const drawn = { count: 0 };
   const mod = defineModule('fixture.fs-holder', {
     init: (ctx) => {
       got.ctx = ctx as Ctx;
       return undefined;
+    },
+    renderers: {
+      'fixture.counted': ({ data }) => {
+        drawn.count += 1;
+        return String(data);
+      }
     }
   });
-  return { mod, ctx: () => got.ctx as Ctx };
+  return { mod, ctx: () => got.ctx as Ctx, drawn };
 }
 
 const unmounts: (() => void)[] = [];
@@ -70,7 +83,9 @@ afterEach(() => {
   delete process.env.SURFACE_FULLSCREEN;
 });
 
-function onTerminal(opts: { rows?: number; columns?: number; band?: boolean } = {}) {
+function onTerminal(
+  opts: { rows?: number; columns?: number; band?: boolean; modules?: AnyModule[] } = {}
+) {
   const h = holder();
   const rows = opts.rows ?? 12;
   const columns = opts.columns ?? 60;
@@ -78,7 +93,7 @@ function onTerminal(opts: { rows?: number; columns?: number; band?: boolean } = 
   const stdin = new In();
   const { App } = createApp({
     theme: defaultTheme,
-    modules: [echo, h.mod],
+    modules: [echo, h.mod, ...(opts.modules ?? [])],
     ...(opts.band ? { band: true } : {})
   });
   const app = inkRender(<App columns={columns} rows={rows} />, {
@@ -94,7 +109,11 @@ function onTerminal(opts: { rows?: number; columns?: number; band?: boolean } = 
     stdin.write(s);
     await tick();
   };
-  return { ...h, out, lines, type, frame: () => out.lastFrame() };
+  const resize = async (r: number) => {
+    app.rerender(<App columns={columns} rows={r} />);
+    await tick();
+  };
+  return { ...h, out, lines, type, resize, frame: () => out.lastFrame() };
 }
 
 /** Prints `n` numbered notes, one line each. */
@@ -213,15 +232,80 @@ describe('full-screen', () => {
     expect(t.frame()).not.toBe('');
   });
 
-  it('a long session keeps only the newest lines, and says what it left out', async () => {
+  it('a long session scrolls back to its very first line', async () => {
     const t = onTerminal({ rows: 100 });
     await fill(t, 1100);
-    await tick();
-    // Scroll to the very top: the oldest entries are not drawn.
     for (let i = 0; i < 12; i++) await t.type(PG_UP);
-    expect(t.frame()).toMatch(/… \d+ earlier entries not shown/);
-    expect(t.frame()).not.toContain('line 1\n');
+    expect(t.frame()).toContain('line 1\n');
   }, 30_000);
+
+  it('in a long session a held view does not move as output lands, and counts what is below', async () => {
+    const t = onTerminal();
+    await fill(t, 1100);
+    await t.type(PG_UP);
+    const held = shownLines(t);
+    const below = marker(t.frame());
+    await fill(t, 5, 1101);
+    expect(shownLines(t)).toEqual(held);
+    expect(marker(t.frame())).toBe(below + 5);
+  }, 30_000);
+
+  it('typing draws only the replies near the view, however long the session', async () => {
+    const t = onTerminal();
+    for (let i = 1; i <= 300; i++) t.ctx().say({ kind: 'fixture.counted', data: `reply ${i}` });
+    await tick(200);
+    t.drawn.count = 0;
+    await t.type('x');
+    expect(t.drawn.count).toBeLessThan(60);
+  }, 30_000);
+
+  it('sending a slash command while held snaps to the bottom', async () => {
+    const t = onTerminal();
+    await fill(t, 30);
+    await t.type(PG_UP);
+    expect(t.frame()).toContain('lines below');
+    await t.type('/nosuch');
+    await t.type(ENTER);
+    await tick();
+    expect(t.frame()).not.toContain('lines below');
+  });
+
+  it('the marker blanks the row under it', async () => {
+    const t = onTerminal();
+    for (let i = 1; i <= 30; i++) t.ctx().print(`line ${i} ${'x'.repeat(50)}`);
+    await tick();
+    await t.type(PG_UP);
+    const row = t.lines().find((l) => l.includes('lines below')) ?? '';
+    expect(row).not.toContain('x');
+  });
+
+  it('a panel that takes typing stops PgUp moving the view under it', async () => {
+    const typing = defineModule<{ p: Record<string, never> }>('fixture.typing', {
+      commands: [{ name: 'type', summary: 'open', args: [], run: (_, ctx) => ctx.open('p', {}) }],
+      panels: { p: { view: () => 'TYPING PANEL', submit: (st) => st } }
+    });
+    const t = onTerminal({ modules: [typing] });
+    await fill(t, 30);
+    await t.type('/type');
+    await t.type(ENTER);
+    expect(t.frame()).toContain('TYPING PANEL');
+    await t.type(PG_UP);
+    await t.type('\x1b');
+    await tick();
+    expect(t.frame()).not.toContain('TYPING PANEL');
+    expect(t.frame()).not.toContain('lines below');
+  });
+
+  it('after the terminal grows past a held view, new output shows again', async () => {
+    const t = onTerminal();
+    await fill(t, 14);
+    await t.type(PG_UP);
+    expect(t.frame()).toContain('lines below');
+    await t.resize(40);
+    expect(t.frame()).not.toContain('lines below');
+    await fill(t, 40, 15);
+    expect(t.frame()).toContain('line 54');
+  });
 
   it('createApp reports the resolved mode', () => {
     expect(createApp({ theme: defaultTheme, modules: [echo] }).fullscreen).toBe(true);

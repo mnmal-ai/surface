@@ -115,7 +115,8 @@ export function resolveKey(state: KeyState, key: Key, registry: Registry): Route
   const global = registry.globals.get(spec);
   if (global) return { kind: 'global', module: global.module, key: spec };
 
-  if (state.viewport !== undefined) {
+  // Not under a panel: it draws over the viewport, so moving the view would be unseen.
+  if (state.viewport !== undefined && state.overlay === null) {
     if (spec === 'pageup') return { kind: 'scroll', act: 'page-up' };
     if (spec === 'pagedown') return { kind: 'scroll', act: 'page-down' };
     // While following, End stays the editor's end of line.
