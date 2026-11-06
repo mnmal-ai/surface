@@ -137,11 +137,15 @@ function ListPage({
         <Text color={theme.color.dim}>{`${of} · page ${page + 1} of ${pages}`}</Text>
       </Text>
       {step.filtering || step.filter !== '' ? (
-        <Text color={theme.color.dim}>{`filter: ${step.filter}${step.filtering ? '▌' : ''}`}</Text>
+        <Text color={theme.color.dim} wrap="truncate">
+          {`filter: ${step.filter}${step.filtering ? '▌' : ''}`}
+        </Text>
       ) : null}
       <Box marginTop={1} flexDirection="column">
         {slice.length === 0 ? (
-          <Text color={theme.color.dim}>{`no rows match ${step.filter}`}</Text>
+          <Text color={theme.color.dim} wrap="truncate">
+            {step.filter === '' ? 'nothing here' : `no rows match ${step.filter}`}
+          </Text>
         ) : (
           <ListRows
             lines={listLines(slice, size.columns, page * per + 1)}
@@ -413,7 +417,8 @@ export function listPager(): {
           },
           backspace: (s) => keep(backspace(s))
         },
-        text: (s, text) => keep(typeChar(s, text)),
+        // A pasted chunk joins the filter as one clean line.
+        text: (s, text) => keep(typeChar(s, sanitise(text.replace(/[\r\n]+/g, ' ')))),
         escape: (s) => {
           const prev = back(s);
           return prev === undefined ? undefined : keep(prev);

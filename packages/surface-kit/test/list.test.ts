@@ -70,6 +70,18 @@ describe('listLines', () => {
     expect(cellWidth(l?.value ?? '')).toBeGreaterThanOrEqual(1);
   });
 
+  it('cuts a wide name at an odd cell without letting later text into the gap', () => {
+    const rows: ListRow[] = [{ key: '1', name: [{ text: '漢字漢', em: true }, { text: 'abc' }] }];
+    // Indent 2, ordinal 1 and its gap 2: a width of 11 leaves the name 6 cells. '漢字' (4) fits;
+    // the third 漢 (2) does not beside the '…', and 'abc' must not slip into the cell left over.
+    const [l] = listLines(rows, 11);
+    const shown = (l?.name ?? [])
+      .map((s) => s.text)
+      .join('')
+      .trimEnd();
+    expect(shown).toBe('漢字…');
+  });
+
   it('keeps emphasis spans through fitting', () => {
     const rows: ListRow[] = [
       {
