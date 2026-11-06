@@ -46,7 +46,9 @@ function onTerminal(anchored: boolean) {
     stdout: out as unknown as NodeJS.WriteStream,
     stdin: stdin as unknown as NodeJS.ReadStream,
     patchConsole: false,
-    exitOnCtrlC: false
+    exitOnCtrlC: false,
+    // A terminal, even under CI=true, which Ink otherwise takes as non-interactive.
+    interactive: true
   });
   const wipes = () => writes.filter((w) => w.includes(CLEAR_PANE)).length;
   return { ...h, out, writes, wipes, app };
