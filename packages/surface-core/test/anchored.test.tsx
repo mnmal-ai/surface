@@ -36,7 +36,12 @@ function onTerminal(anchored: boolean) {
     ref: () => stdin,
     unref: () => stdin
   });
-  const { App } = createApp({ theme: defaultTheme, modules: [echo, panels, h.mod], anchored });
+  const { App } = createApp({
+    theme: defaultTheme,
+    modules: [echo, panels, h.mod],
+    anchored,
+    fullscreen: false
+  });
   const app = inkRender(<App />, {
     stdout: out as unknown as NodeJS.WriteStream,
     stdin: stdin as unknown as NodeJS.ReadStream,

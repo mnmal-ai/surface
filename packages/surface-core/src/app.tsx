@@ -35,6 +35,15 @@ import {
   pasteToLine
 } from './editor.js';
 import { CTRL_C_WINDOW_MS, ctrlC } from './exit-chord.js';
+import {
+  FOLLOWING,
+  linesBelow,
+  pageStep,
+  resolveFullscreen,
+  type Scroll,
+  scrollBy,
+  viewTop
+} from './fullscreen.js';
 import { EMPTY_HISTORY, type HistoryState, remember, settle, walk } from './history.js';
 import { type KeyState, resolveKey } from './keys.js';
 import type {
@@ -164,6 +173,13 @@ export interface AppOptions {
    * unchanged.
    */
   readonly anchored?: boolean;
+  /**
+   * Full-screen: the app runs in the terminal's alternate screen, the transcript scrolls in a
+   * viewport (PgUp / PgDn, End jumps back to the bottom while scrolled up) and the input, band and
+   * status row stay pinned. Default true. `SURFACE_FULLSCREEN=on|off` overrides it. Ignored off a
+   * TTY. `anchored` applies only when this is off.
+   */
+  readonly fullscreen?: boolean;
   /**
    * How `run()` prepares the terminal before the first frame (ground, pane wipe, bottom anchor).
    * Options here pass through to `prepareTerminal`, over an `anchor` that follows `anchored`.
@@ -381,16 +397,23 @@ interface AppProps {
 
 /** What `run()` prepares the terminal with, or `null` when the host has prepared it already. */
 export function runTerminalOptions(
-  opts: Pick<AppOptions, 'anchored' | 'terminal'>
+  opts: Pick<AppOptions, 'anchored' | 'terminal'>,
+  fullscreen: boolean
 ): PrepareTerminalOptions | null {
   if (opts.terminal === false) return null;
-  return { anchor: opts.anchored === true, ...opts.terminal };
+  return {
+    anchor: opts.anchored === true,
+    ...opts.terminal,
+    ...(fullscreen ? { fullscreen } : {})
+  };
 }
 
 export function createApp(opts: AppOptions): {
   registry: Registry;
   App: (props: AppProps) => ReactElement;
   run(): Promise<void>;
+  /** Full-screen as resolved from the option and `SURFACE_FULLSCREEN`, before the TTY check. */
+  fullscreen: boolean;
 } {
   const registry = composeModules(opts.modules);
   const theme = opts.theme;
@@ -407,6 +430,7 @@ export function createApp(opts: AppOptions): {
   const presenceModule = registry.presence?.module ?? '';
   const panelRows = opts.panelRows ?? ((r: number) => defaultPanelRows(r, { band }));
   const anchored = opts.anchored === true;
+  const fs = resolveFullscreen(opts.fullscreen, process.env.SURFACE_FULLSCREEN);
 
   function App({ columns, rows }: AppProps): ReactElement {
     const { exit } = useApp();
@@ -414,6 +438,10 @@ export function createApp(opts: AppOptions): {
     // Ink types it as any writable; on a terminal it is a tty.WriteStream, and off one these are unset.
     const stdout = useStdout().stdout as NodeJS.WritableStream &
       Partial<Pick<NodeJS.WriteStream, 'columns' | 'rows' | 'isTTY'>>;
+    // Full-screen needs a terminal; off one the shell prints inline as it always has.
+    const full = fs.on && stdout.isTTY === true;
+    // The inline pane's re-lays (`anchored`): full-screen has no scrollback to manage.
+    const relays = anchored && !full;
     const [term, setTerm] = useState(() => ({
       columns: stdout.columns ?? 120,
       rows: stdout.rows ?? 30
@@ -451,7 +479,7 @@ export function createApp(opts: AppOptions): {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const onResize = () => {
         setTerm({ columns: stdout.columns ?? 120, rows: stdout.rows ?? 30 });
-        if (!anchored) return;
+        if (!relays) return;
         clearTimeout(timer);
         timer = setTimeout(() => {
           const now = { columns: stdout.columns ?? 120, rows: stdout.rows ?? 30 };
@@ -469,7 +497,7 @@ export function createApp(opts: AppOptions): {
         clearTimeout(timer);
         stdout.off('resize', onResize);
       };
-    }, [stdout, relayout]);
+    }, [stdout, relayout, relays]);
     const width = Math.max(1, (columns ?? term.columns) - 2 * gutter);
     const height = rows ?? term.rows;
     const showRail = registry.rail.length > 0 && width >= railMin;
@@ -522,6 +550,14 @@ export function createApp(opts: AppOptions): {
       if (armedRef.current === a) return;
       armedRef.current = a;
       setArmed(a);
+    }, []);
+    // Full-screen's viewport: where it is scrolled, and the content and viewport heights the last
+    // render measured. Mirrored in refs, as the draft is, for keys handled before a re-render.
+    const [scroll, setScroll] = useState<Scroll>(FOLLOWING);
+    const scrollRef = useRef<Scroll>(FOLLOWING);
+    const putScroll = useCallback((next: Scroll) => {
+      scrollRef.current = next;
+      setScroll(next);
     }, []);
     const defOf = useCallback(
       (o: Overlay | null) => (o ? registry.panels.get(`${o.module}/${o.panel}`)?.def : undefined),
@@ -745,6 +781,8 @@ export function createApp(opts: AppOptions): {
     // typed: only a typed line joins the history, or one its module says was typed.
     const handleLine = useCallback(
       (line: string, sent?: SubmitOptions) => {
+        // Every send, typed, chosen from the palette or pasted, brings the view back down.
+        putScroll(FOLLOWING);
         const text = line.trim();
         // A focused panel that owns the input line takes every line but a /command, and a
         // masked one every typed line. The line is an entry in the panel, not a turn, so it stays
@@ -795,7 +833,7 @@ export function createApp(opts: AppOptions): {
           print('nothing here answers that', 'warn');
         }
       },
-      [ctxFor, print, putHistory, runTurn, guard, putOverlay]
+      [ctxFor, print, putHistory, runTurn, guard, putOverlay, putScroll]
     );
     handleLineRef.current = handleLine;
 
@@ -803,10 +841,46 @@ export function createApp(opts: AppOptions): {
     // nothing printed above it, a gap of that many blank rows scrolls the pane back down, so the
     // input stays on the last row. Gaps are not counted as printed: a gap scrolls the pane by
     // exactly its own rows, so a shrink spread over two renders is still owed its second half.
+    const viewportRef = useRef<DOMElement>(null);
+    const flightsRef = useRef<DOMElement>(null);
+    const [measured, setMeasured] = useState({ content: 0, viewport: 1 });
+    const measuredRef = useRef(measured);
+    // The transcript's rows: each entry's recorded height (only entries near the view are drawn,
+    // so the rest are counted, not laid out), then the turns in flight below them.
+    // shortcut: heights recorded at an older width stay until the entry is drawn again; re-measure on resize if counts drift.
+    const contentRows = useCallback((): number => {
+      let rows = 0;
+      for (const e of transcriptRef.current.committed) rows += heights.current.get(e.key) ?? 1;
+      return rows + (flightsRef.current === null ? 0 : measureElement(flightsRef.current).height);
+    }, []);
+    const viewportRows = useCallback(
+      (): number =>
+        viewportRef.current === null
+          ? measuredRef.current.viewport
+          : Math.max(1, measureElement(viewportRef.current).height),
+      []
+    );
+    useEffect(() => {
+      if (!full || viewportRef.current === null) return;
+      const now = { content: contentRows(), viewport: viewportRows() };
+      // A view held at or past the bottom (the terminal grew) is following again.
+      const held = scrollRef.current.held;
+      if (held !== null && held >= Math.max(0, now.content - now.viewport)) putScroll(FOLLOWING);
+      const was = measuredRef.current;
+      if (now.content === was.content && now.viewport === was.viewport) return;
+      measuredRef.current = now;
+      setMeasured(now);
+    });
+    // An unrecognised SURFACE_FULLSCREEN is said once, rather than silently doing nothing.
+    useEffect(() => {
+      if (fs.invalid !== null)
+        print(`SURFACE_FULLSCREEN=${fs.invalid} ignored: use on or off`, 'warn');
+    }, [print]);
+
     const liveRef = useRef<DOMElement>(null);
     const lastLive = useRef<LiveMeasure | null>(null);
     useEffect(() => {
-      if (!anchored || liveRef.current === null) return;
+      if (!relays || liveRef.current === null) return;
       const now: LiveMeasure = {
         height: measureElement(liveRef.current).height,
         committed: transcript.committed.filter((e) => e.kind !== 'gap').length,
@@ -822,9 +896,9 @@ export function createApp(opts: AppOptions): {
     const panelOpen = overlay !== null || menu !== null;
     const wasPanelOpen = useRef(panelOpen);
     useEffect(() => {
-      if (anchored && wasPanelOpen.current && !panelOpen) relayout();
+      if (relays && wasPanelOpen.current && !panelOpen) relayout();
       wasPanelOpen.current = panelOpen;
-    }, [panelOpen, relayout]);
+    }, [panelOpen, relayout, relays]);
     // A line sent by the act that closed the menu runs one render later (`anchored`). The close is
     // measured above, and reclaimed only when nothing was printed in the same render, so the line
     // waits for it. Declared after the measuring effect: effects run in declaration order.
@@ -835,7 +909,7 @@ export function createApp(opts: AppOptions): {
       handleLine(pendingLine);
     }, [pendingLine, handleLine]);
     const sendAfterClose = (line: string) => {
-      if (anchored) setPendingLine(line);
+      if (relays) setPendingLine(line);
       else handleLine(line);
     };
 
@@ -924,7 +998,8 @@ export function createApp(opts: AppOptions): {
           overlay.panel === armedOn.panel &&
           draft.text === armedOn.key
             ? armedOn.key
-            : null
+            : null,
+        ...(full ? { viewport: scrollRef.current.held === null ? 'following' : 'held' } : {})
       };
       const route = resolveKey(state, key, registry);
       switch (route.kind) {
@@ -1087,6 +1162,18 @@ export function createApp(opts: AppOptions): {
           if (step === null) return;
           putHistory(step.state);
           putDraft(atEnd(step.text));
+          return;
+        }
+        case 'scroll': {
+          // Measured now, not from the last effect: output that just landed counts.
+          const content = contentRows();
+          const viewport = viewportRows();
+          const step = route.act === 'page-up' ? -pageStep(viewport) : pageStep(viewport);
+          putScroll(
+            route.act === 'bottom'
+              ? FOLLOWING
+              : scrollBy(scrollRef.current, step, content, viewport)
+          );
           return;
         }
         case 'submit': {
@@ -1335,6 +1422,235 @@ export function createApp(opts: AppOptions): {
             },
             ...transcript.committed.slice(reprintFrom)
           ];
+    // The live region's parts, shared by the inline and full-screen layouts.
+    const flightRows = (
+      <>
+        {/* Turns whose asks are printed above with a mark, still waiting. Older first. */}
+        {markedFlights(transcript).map((f) => (
+          <Box key={`marked:${f.id}`}>{waiting(f, false)}</Box>
+        ))}
+        {heldAsks(transcript).map((f) => (
+          <Box key={f.id} flexDirection="column">
+            {askView ? (
+              <Safe
+                module="app"
+                theme={theme}
+                render={() => askView({ entry: f, held: true, theme, size: { columns: width } })}
+              />
+            ) : (
+              <Text color={theme.color.accent}>
+                {theme.glyph.prompt} {sanitise(f.question)}
+              </Text>
+            )}
+            {waiting(f, true)}
+          </Box>
+        ))}
+      </>
+    );
+    const overlayRows = (
+      <>
+        {panel && overlay ? (
+          <Box
+            backgroundColor={theme.color.raised}
+            paddingX={PANEL_PAD_X}
+            paddingY={PANEL_PAD_Y}
+            flexDirection="column"
+          >
+            <Safe
+              key={`${overlay.module}/${overlay.panel}`}
+              module={overlay.module}
+              theme={theme}
+              render={() =>
+                panel.view({
+                  state: overlay.state,
+                  theme,
+                  size: panelSize,
+                  ...(armed !== null &&
+                  armed.module === overlay.module &&
+                  armed.panel === overlay.panel &&
+                  draft.text === armed.key
+                    ? { armed: { key: armed.key, label: armed.label } }
+                    : {})
+                })
+              }
+            />
+          </Box>
+        ) : null}
+        {menu?.kind === 'palette' ? (
+          <MenuList
+            theme={theme}
+            rows={paletteItems.map((c) => ({
+              key: c.name,
+              name: commandUsage(c),
+              detail: c.summary
+            }))}
+            selected={menu.selected}
+            height={menuRows}
+            empty={`no command matches ${draft.text}`}
+            hint="tab complete · enter run · esc close"
+          />
+        ) : null}
+        {menu?.kind === 'completion' ? (
+          <MenuList
+            theme={theme}
+            rows={menu.items.map((s) => ({
+              key: s.insert,
+              name: s.label,
+              detail: s.detail ?? ''
+            }))}
+            selected={menu.selected}
+            height={menuRows}
+            empty="no completions"
+            hint="tab complete · esc close"
+          />
+        ) : null}
+      </>
+    );
+    const pinnedRows = (
+      <>
+        {band ? (
+          <Box
+            borderStyle="bold"
+            borderTop={false}
+            borderRight={false}
+            borderBottom={false}
+            borderColor={theme.color.edge}
+            backgroundColor={theme.color.surfaceAlt}
+            paddingX={1}
+            paddingY={1}
+            flexDirection="column"
+          >
+            {/* No prompt glyph in the band: its edge and the block cursor mark the input. */}
+            <Text>
+              {shownDraft.text.slice(0, shownDraft.cursor)}
+              {under === '' ? (
+                <Text color={theme.color.cursor}>█</Text>
+              ) : (
+                <Text inverse>{under}</Text>
+              )}
+              {under === '' ? '' : shownDraft.text.slice(shownDraft.cursor + under.length)}
+            </Text>
+            <Box marginTop={1}>
+              {presence ? (
+                <Box flexShrink={0}>
+                  <Text bold>{sanitise(presence.name)} </Text>
+                </Box>
+              ) : null}
+              <Box flexGrow={1} minWidth={0}>
+                <Text color={theme.color.dim} wrap="truncate">
+                  {presence?.view ? (
+                    <Safe
+                      module={presenceModule}
+                      theme={theme}
+                      render={() => presence.view?.({ theme })}
+                    />
+                  ) : null}
+                </Text>
+              </Box>
+              <Box flexShrink={0} paddingLeft={notice === null ? 0 : 2}>
+                <Text color={theme.color.warn}>{notice ?? ' '}</Text>
+              </Box>
+            </Box>
+          </Box>
+        ) : (
+          <Text>
+            <Text color={theme.color.accent}>{theme.glyph.prompt} </Text>
+            {shownDraft.text}
+          </Text>
+        )}
+        {toast ? <Text color={theme.color[toast.tone]}>{toast.text}</Text> : null}
+        <Box {...(band ? { marginTop: 1 } : {})}>
+          {registry.status.map((s) => (
+            <Box key={`${s.module}:${s.item.id}`} marginRight={2}>
+              <Safe module={s.module} theme={theme} render={() => s.item.view({ theme })} />
+            </Box>
+          ))}
+          {[...status.entries()].map(([k, v]) => (
+            <Text key={k} color={theme.color[v.tone]}>
+              {v.text}{' '}
+            </Text>
+          ))}
+        </Box>
+      </>
+    );
+    const railColumn = (
+      <>
+        {showRail ? (
+          <Box flexDirection="column" width={RAIL_COLUMNS - 1} marginLeft={1}>
+            {registry.rail.map((r) => (
+              <Box key={`${r.module}:${r.item.id}`}>
+                <Safe module={r.module} theme={theme} render={() => r.item.view({ theme })} />
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+      </>
+    );
+    if (full) {
+      const { content, viewport } = measured;
+      const top = viewTop(scroll, content, viewport);
+      const below = linesBelow(scroll, content, viewport);
+      // Only entries near the view are drawn: a viewport above and two below what shows, plus any
+      // entry not yet measured (it is drawn once, out of sight, to learn its height). Everything
+      // above the first drawn entry is skipped by the content's top margin.
+      const lo = top - viewport;
+      const hi = top + 2 * viewport;
+      const shown: Entry<Reply>[] = [];
+      let at = 0;
+      let skipped: number | null = null;
+      for (const e of transcript.committed as Entry<Reply>[]) {
+        const h = heights.current.get(e.key);
+        const rows = h ?? 1;
+        if ((at + rows > lo && at < hi) || h === undefined) {
+          if (skipped === null) skipped = at;
+          shown.push(e);
+        }
+        at += rows;
+      }
+      const rowsAbove = skipped ?? at;
+      const markerText = `↓ ${below} lines below · End to jump back`;
+      return (
+        <Box flexDirection="row" height={height} paddingX={gutter}>
+          <Box flexDirection="column" flexGrow={1}>
+            <Box
+              ref={viewportRef}
+              flexDirection="column"
+              flexGrow={1}
+              flexShrink={1}
+              minHeight={1}
+              overflow="hidden"
+            >
+              <Box flexDirection="column" flexShrink={0} marginTop={-(top - rowsAbove)}>
+                {shown.map((e) => (
+                  <Printed key={e.key} id={e.key} heights={heights.current} paddingX={0}>
+                    {committed(e)}
+                  </Printed>
+                ))}
+                <Box ref={flightsRef} flexDirection="column" flexShrink={0}>
+                  {flightRows}
+                </Box>
+              </Box>
+              {panelOpen ? (
+                <Box position="absolute" bottom={0} width="100%" flexDirection="column">
+                  {overlayRows}
+                </Box>
+              ) : below > 0 ? (
+                <Box position="absolute" bottom={0}>
+                  {/* Padded to the viewport's width, so the row under it does not show through. */}
+                  <Text color={theme.color.dim} wrap="truncate">
+                    {markerText.padEnd(panelOuter.columns)}
+                  </Text>
+                </Box>
+              ) : null}
+            </Box>
+            <Box flexDirection="column" flexShrink={0}>
+              {pinnedRows}
+            </Box>
+          </Box>
+          {railColumn}
+        </Box>
+      );
+    }
     return (
       <Box flexDirection="column">
         <Static key={`static:${epoch}`} items={printed}>
@@ -1346,156 +1662,11 @@ export function createApp(opts: AppOptions): {
         </Static>
         <Box ref={liveRef} flexDirection="row" paddingX={gutter}>
           <Box flexDirection="column" flexGrow={1}>
-            {/* Turns whose asks are printed above with a mark, still waiting. Older first. */}
-            {markedFlights(transcript).map((f) => (
-              <Box key={`marked:${f.id}`}>{waiting(f, false)}</Box>
-            ))}
-            {heldAsks(transcript).map((f) => (
-              <Box key={f.id} flexDirection="column">
-                {askView ? (
-                  <Safe
-                    module="app"
-                    theme={theme}
-                    render={() =>
-                      askView({ entry: f, held: true, theme, size: { columns: width } })
-                    }
-                  />
-                ) : (
-                  <Text color={theme.color.accent}>
-                    {theme.glyph.prompt} {sanitise(f.question)}
-                  </Text>
-                )}
-                {waiting(f, true)}
-              </Box>
-            ))}
-            {panel && overlay ? (
-              <Box
-                backgroundColor={theme.color.raised}
-                paddingX={PANEL_PAD_X}
-                paddingY={PANEL_PAD_Y}
-                flexDirection="column"
-              >
-                <Safe
-                  key={`${overlay.module}/${overlay.panel}`}
-                  module={overlay.module}
-                  theme={theme}
-                  render={() =>
-                    panel.view({
-                      state: overlay.state,
-                      theme,
-                      size: panelSize,
-                      ...(armed !== null &&
-                      armed.module === overlay.module &&
-                      armed.panel === overlay.panel &&
-                      draft.text === armed.key
-                        ? { armed: { key: armed.key, label: armed.label } }
-                        : {})
-                    })
-                  }
-                />
-              </Box>
-            ) : null}
-            {menu?.kind === 'palette' ? (
-              <MenuList
-                theme={theme}
-                rows={paletteItems.map((c) => ({
-                  key: c.name,
-                  name: commandUsage(c),
-                  detail: c.summary
-                }))}
-                selected={menu.selected}
-                height={menuRows}
-                empty={`no command matches ${draft.text}`}
-                hint="tab complete · enter run · esc close"
-              />
-            ) : null}
-            {menu?.kind === 'completion' ? (
-              <MenuList
-                theme={theme}
-                rows={menu.items.map((s) => ({
-                  key: s.insert,
-                  name: s.label,
-                  detail: s.detail ?? ''
-                }))}
-                selected={menu.selected}
-                height={menuRows}
-                empty="no completions"
-                hint="tab complete · esc close"
-              />
-            ) : null}
-            {band ? (
-              <Box
-                borderStyle="bold"
-                borderTop={false}
-                borderRight={false}
-                borderBottom={false}
-                borderColor={theme.color.edge}
-                backgroundColor={theme.color.surfaceAlt}
-                paddingX={1}
-                paddingY={1}
-                flexDirection="column"
-              >
-                {/* No prompt glyph in the band: its edge and the block cursor mark the input. */}
-                <Text>
-                  {shownDraft.text.slice(0, shownDraft.cursor)}
-                  {under === '' ? (
-                    <Text color={theme.color.cursor}>█</Text>
-                  ) : (
-                    <Text inverse>{under}</Text>
-                  )}
-                  {under === '' ? '' : shownDraft.text.slice(shownDraft.cursor + under.length)}
-                </Text>
-                <Box marginTop={1}>
-                  {presence ? (
-                    <Box flexShrink={0}>
-                      <Text bold>{sanitise(presence.name)} </Text>
-                    </Box>
-                  ) : null}
-                  <Box flexGrow={1} minWidth={0}>
-                    <Text color={theme.color.dim} wrap="truncate">
-                      {presence?.view ? (
-                        <Safe
-                          module={presenceModule}
-                          theme={theme}
-                          render={() => presence.view?.({ theme })}
-                        />
-                      ) : null}
-                    </Text>
-                  </Box>
-                  <Box flexShrink={0} paddingLeft={notice === null ? 0 : 2}>
-                    <Text color={theme.color.warn}>{notice ?? ' '}</Text>
-                  </Box>
-                </Box>
-              </Box>
-            ) : (
-              <Text>
-                <Text color={theme.color.accent}>{theme.glyph.prompt} </Text>
-                {shownDraft.text}
-              </Text>
-            )}
-            {toast ? <Text color={theme.color[toast.tone]}>{toast.text}</Text> : null}
-            <Box {...(band ? { marginTop: 1 } : {})}>
-              {registry.status.map((s) => (
-                <Box key={`${s.module}:${s.item.id}`} marginRight={2}>
-                  <Safe module={s.module} theme={theme} render={() => s.item.view({ theme })} />
-                </Box>
-              ))}
-              {[...status.entries()].map(([k, v]) => (
-                <Text key={k} color={theme.color[v.tone]}>
-                  {v.text}{' '}
-                </Text>
-              ))}
-            </Box>
+            {flightRows}
+            {overlayRows}
+            {pinnedRows}
           </Box>
-          {showRail ? (
-            <Box flexDirection="column" width={RAIL_COLUMNS - 1} marginLeft={1}>
-              {registry.rail.map((r) => (
-                <Box key={`${r.module}:${r.item.id}`}>
-                  <Safe module={r.module} theme={theme} render={() => r.item.view({ theme })} />
-                </Box>
-              ))}
-            </Box>
-          ) : null}
+          {railColumn}
         </Box>
       </Box>
     );
@@ -1504,12 +1675,14 @@ export function createApp(opts: AppOptions): {
   return {
     registry,
     App,
+    fullscreen: fs.on,
     async run() {
-      // Ground, clear and anchor the terminal before the first frame: the app's own re-lays only
-      // redo a pane that was prepared this way.
-      const prepare = runTerminalOptions(opts);
+      // Ground, clear and anchor the terminal before the first frame (full-screen: ground, and the
+      // wheel's arrow keys off): the app's own re-lays only redo a pane prepared this way.
+      const full = fs.on && process.stdout.isTTY === true;
+      const prepare = runTerminalOptions(opts, full);
       const restore = prepare === null ? () => {} : prepareTerminal(process.stdout, prepare);
-      const instance = render(<App />, { exitOnCtrlC: false });
+      const instance = render(<App />, { exitOnCtrlC: false, alternateScreen: full });
       await instance.waitUntilExit();
       restore();
     }
