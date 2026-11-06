@@ -70,7 +70,8 @@ describe('no-ink-in-pure', () => {
     const root = fixture({
       'surface-core/dist/pure.js': "import { Box } from 'ink';\nexport {};",
       'surface-kit/dist/cells.js': 'export {};',
-      'surface-kit/dist/text.js': 'export {};'
+      'surface-kit/dist/text.js': 'export {};',
+      'surface-kit/dist/list.js': 'export {};'
     });
     assert.equal(run('no-ink-in-pure.mjs', root), 1);
   });
@@ -79,7 +80,8 @@ describe('no-ink-in-pure', () => {
       'surface-core/dist/pure.js': "export * from './chunk.js';",
       'surface-core/dist/chunk.js': "import { jsx } from 'react/jsx-runtime';\nexport {};",
       'surface-kit/dist/cells.js': 'export {};',
-      'surface-kit/dist/text.js': 'export {};'
+      'surface-kit/dist/text.js': 'export {};',
+      'surface-kit/dist/list.js': 'export {};'
     });
     assert.equal(run('no-ink-in-pure.mjs', root), 1);
   });
@@ -88,7 +90,8 @@ describe('no-ink-in-pure', () => {
       'surface-core/dist/pure.js':
         "import { spinnerFrame } from '@mnmal-ai/surface-kit';\nexport {};",
       'surface-kit/dist/cells.js': 'export {};',
-      'surface-kit/dist/text.js': 'export {};'
+      'surface-kit/dist/text.js': 'export {};',
+      'surface-kit/dist/list.js': 'export {};'
     });
     assert.equal(run('no-ink-in-pure.mjs', root), 1);
   });
@@ -97,7 +100,8 @@ describe('no-ink-in-pure', () => {
       'surface-core/dist/pure.js':
         "import { cellWidth } from '@mnmal-ai/surface-kit/cells';\nexport {};",
       'surface-kit/dist/cells.js': 'export {};',
-      'surface-kit/dist/text.js': 'export {};'
+      'surface-kit/dist/text.js': 'export {};',
+      'surface-kit/dist/list.js': 'export {};'
     });
     assert.equal(run('no-ink-in-pure.mjs', root), 0);
   });
@@ -106,7 +110,8 @@ describe('no-ink-in-pure', () => {
       'surface-core/dist/pure.js': "import './a.js';\nexport {};",
       'surface-core/dist/a.js': "import w from 'string-width';\nexport {};",
       'surface-kit/dist/cells.js': "import w from 'string-width';\nexport {};",
-      'surface-kit/dist/text.js': 'export {};'
+      'surface-kit/dist/text.js': 'export {};',
+      'surface-kit/dist/list.js': 'export {};'
     });
     assert.equal(run('no-ink-in-pure.mjs', root), 0);
   });

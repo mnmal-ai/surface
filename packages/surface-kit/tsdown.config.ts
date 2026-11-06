@@ -3,7 +3,12 @@ import type { UserConfig } from 'tsdown';
 
 // Peers and workspace siblings stay external: one React, one Ink, one theme.
 const config: UserConfig = defineLibTsdown({
-  entry: { index: 'src/index.ts', cells: 'src/cells.ts', text: 'src/text.ts' },
+  entry: {
+    index: 'src/index.ts',
+    cells: 'src/cells.ts',
+    text: 'src/text.ts',
+    list: 'src/list.ts'
+  },
   external: ['ink', 'react', 'react/jsx-runtime', /^@mnmal-ai\//, 'string-width']
 });
 
