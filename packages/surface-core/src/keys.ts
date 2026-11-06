@@ -26,6 +26,8 @@ export interface KeyState {
   readonly draftEmpty: boolean;
   /** The focused panel's armed confirm key, set only while the draft is exactly it. */
   readonly armed?: string | null;
+  /** Full-screen's transcript viewport: following the bottom, or held. Absent inline. */
+  readonly viewport?: 'following' | 'held';
 }
 
 export type Route =
@@ -48,6 +50,8 @@ export type Route =
     }
   | { readonly kind: 'global'; readonly module: string; readonly key: KeySpec }
   | { readonly kind: 'cancel-turn' }
+  /** Full-screen: move the transcript viewport. */
+  | { readonly kind: 'scroll'; readonly act: 'page-up' | 'page-down' | 'bottom' }
   | { readonly kind: 'history'; readonly dir: 'up' | 'down' }
   | { readonly kind: 'submit' }
   | { readonly kind: 'complete' }
@@ -110,6 +114,13 @@ export function resolveKey(state: KeyState, key: Key, registry: Registry): Route
 
   const global = registry.globals.get(spec);
   if (global) return { kind: 'global', module: global.module, key: spec };
+
+  if (state.viewport !== undefined) {
+    if (spec === 'pageup') return { kind: 'scroll', act: 'page-up' };
+    if (spec === 'pagedown') return { kind: 'scroll', act: 'page-down' };
+    // While following, End stays the editor's end of line.
+    if (spec === 'end' && state.viewport === 'held') return { kind: 'scroll', act: 'bottom' };
+  }
 
   if (spec === 'escape') return state.draftEmpty ? { kind: 'cancel-turn' } : { kind: 'ignore' };
   if (spec === 'up') return { kind: 'history', dir: 'up' };

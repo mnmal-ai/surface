@@ -278,3 +278,62 @@ describe('a panel that owns the input line keeps the draft live', () => {
     expect(resolveKey(on, { input: '', return: true }, r)).toEqual({ kind: 'submit' });
   });
 });
+
+describe('the full-screen viewport', () => {
+  const pgUp = { input: '', pageUp: true };
+  const pgDn = { input: '', pageDown: true };
+  const end = { input: '', end: true };
+  const scrolled = defineModule<{ list: Record<string, never> }>('test.scroll', {
+    panels: { list: { view: () => null, keymap: [{ key: 'pageup', act: 'prev-page' }] } }
+  });
+  const scrolledReg = composeModules([scrolled]);
+  const withGlobal = composeModules([
+    defineModule('test.pg', { keymap: [{ key: 'pageup', run: () => {} }] })
+  ]);
+
+  it('PgUp/PgDn scroll in full-screen', () => {
+    expect(resolveKey({ ...idle, viewport: 'following' }, pgUp, reg)).toEqual({
+      kind: 'scroll',
+      act: 'page-up'
+    });
+    expect(resolveKey({ ...idle, viewport: 'held' }, pgDn, reg)).toEqual({
+      kind: 'scroll',
+      act: 'page-down'
+    });
+  });
+  it('End jumps back only while held; otherwise it edits (end of line)', () => {
+    expect(resolveKey({ ...idle, viewport: 'held' }, end, reg)).toEqual({
+      kind: 'scroll',
+      act: 'bottom'
+    });
+    expect(resolveKey({ ...idle, viewport: 'following' }, end, reg)).toEqual({ kind: 'edit' });
+  });
+  it('inline mode is unchanged', () => {
+    expect(resolveKey(idle, pgUp, reg)).toEqual({ kind: 'edit' });
+    expect(resolveKey(idle, end, reg)).toEqual({ kind: 'edit' });
+  });
+  it('a global on pageup still wins', () => {
+    expect(resolveKey({ ...idle, viewport: 'held' }, pgUp, withGlobal).kind).toBe('global');
+  });
+  it('a panel keymap on pageup still wins, and an open menu never scrolls', () => {
+    const panel = { module: 'test.scroll', panel: 'list' };
+    expect(resolveKey({ ...idle, viewport: 'held', overlay: panel }, pgUp, scrolledReg).kind).toBe(
+      'panel'
+    );
+    expect(resolveKey({ ...idle, viewport: 'held', menu: 'palette' }, pgUp, reg)).toEqual({
+      kind: 'edit'
+    });
+  });
+  it('a panel that does not claim PgUp does not scroll the viewport under it', () => {
+    const panel = { module: 'test.k', panel: 'list' };
+    expect(resolveKey({ ...idle, viewport: 'held', overlay: panel }, pgUp, reg)).toEqual({
+      kind: 'ignore'
+    });
+  });
+  it('Up/Down still reach history', () => {
+    expect(resolveKey({ ...idle, viewport: 'held' }, { input: '', upArrow: true }, reg)).toEqual({
+      kind: 'history',
+      dir: 'up'
+    });
+  });
+});
