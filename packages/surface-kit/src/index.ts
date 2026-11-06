@@ -13,6 +13,7 @@ export {
   listLines,
   wrapCells
 } from './list.js';
+export { ListRows, type ListRowsProps } from './list-view.js';
 export { type MarkdownSpan, type MarkdownStyle, markdownSpans } from './markdown.js';
 export { Panel, type PanelProps } from './panel.js';
 export { sparkline } from './sparkline.js';
