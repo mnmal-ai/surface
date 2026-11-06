@@ -47,6 +47,30 @@ const sized = defineModule<{ probe: Record<string, never> }>('fixture.sized', {
   }
 });
 
+const tight = defineModule<{ probe: Record<string, never> }>('fixture.tight', {
+  commands: [
+    {
+      name: 'tight',
+      summary: 'open the tight panel',
+      args: [],
+      run: (_, ctx) => {
+        ctx.open('probe', {});
+        sizes.ctx.push(ctx.size());
+      }
+    }
+  ],
+  panels: {
+    probe: {
+      inset: { x: 1, y: 0 },
+      ground: '#202020',
+      view: ({ size }) => {
+        sizes.view.push(size);
+        return 'tight';
+      }
+    }
+  }
+});
+
 describe('raised overlays', () => {
   it('the / menu sits on `raised`, not on the band ground', async () => {
     const { App } = createApp({ theme, modules: [echo, panels], band: true });
@@ -95,6 +119,27 @@ describe('raised overlays', () => {
     expect(sizes.view.at(-1)).toEqual({ columns: 112, rows: outer - 2 });
     expect(sizes.ctx.at(-1)).toEqual({ columns: 112, rows: outer - 2 });
     expect((r.lastFrame() ?? '').split('\n').length).toBeLessThanOrEqual(40);
+    r.unmount();
+  });
+
+  it('a panel with its own inset and ground is drawn and sized by them', async () => {
+    sizes.view.length = 0;
+    sizes.ctx.length = 0;
+    const { App } = createApp({ theme, modules: [echo, tight], band: true });
+    const r = render(<App columns={120} rows={40} />);
+    await tick();
+    r.stdin.write('/tight');
+    await tick();
+    seen.boxes.length = 0;
+    r.stdin.write('\r');
+    await tick(60);
+    expect(r.lastFrame()).toContain('tight');
+    const host = seen.boxes.find((b) => b.backgroundColor === '#202020');
+    expect(host?.paddingX).toBe(1);
+    expect(host?.paddingY).toBe(0);
+    const outer = defaultPanelRows(40, { band: true });
+    expect(sizes.view.at(-1)).toEqual({ columns: 118, rows: outer });
+    expect(sizes.ctx.at(-1)).toEqual({ columns: 118, rows: outer });
     r.unmount();
   });
 });
