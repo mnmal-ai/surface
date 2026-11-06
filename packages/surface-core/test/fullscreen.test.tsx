@@ -131,6 +131,14 @@ describe('full-screen', () => {
     expect(t.frame()).toContain('line 33');
   });
 
+  it('PgUp pressed as output lands still scrolls', async () => {
+    const t = onTerminal();
+    for (let i = 1; i <= 30; i++) t.ctx().print(`line ${i}`);
+    await new Promise((r) => setImmediate(r));
+    await t.type(PG_UP);
+    expect(t.frame()).toContain('lines below');
+  });
+
   it('PgDn back to the bottom follows again', async () => {
     const t = onTerminal();
     await fill(t, 30);

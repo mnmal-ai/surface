@@ -1148,7 +1148,15 @@ export function createApp(opts: AppOptions): {
           return;
         }
         case 'scroll': {
-          const { content, viewport } = measuredRef.current;
+          // Measured now, not from the last effect: output that just landed counts.
+          const content =
+            contentRef.current === null
+              ? measuredRef.current.content
+              : measureElement(contentRef.current).height;
+          const viewport =
+            viewportRef.current === null
+              ? measuredRef.current.viewport
+              : Math.max(1, measureElement(viewportRef.current).height);
           const step = route.act === 'page-up' ? -pageStep(viewport) : pageStep(viewport);
           putScroll(
             route.act === 'bottom'
