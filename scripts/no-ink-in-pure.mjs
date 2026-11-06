@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 
 const PURE = {
   'surface-core': ['pure'],
-  'surface-kit': ['cells', 'text']
+  'surface-kit': ['cells', 'text', 'list']
 };
 // ink/react directly, or a sibling package's ROOT entry (its barrel loads Ink);
 // a sibling's pure subpath (`@mnmal-ai/surface-kit/cells`) is fine.

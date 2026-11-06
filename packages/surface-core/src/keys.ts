@@ -49,6 +49,13 @@ export type Route =
       readonly act: string;
     }
   | { readonly kind: 'global'; readonly module: string; readonly key: KeySpec }
+  /** Typed text for a focused panel's `text` hook: a key its keymap does not bind, or a chunk. */
+  | {
+      readonly kind: 'panel-text';
+      readonly module: string;
+      readonly panel: string;
+      readonly text: string;
+    }
   | { readonly kind: 'cancel-turn' }
   /** Full-screen: move the transcript viewport. */
   | { readonly kind: 'scroll'; readonly act: 'page-up' | 'page-down' | 'bottom' }
@@ -67,12 +74,16 @@ export function resolveKey(state: KeyState, key: Key, registry: Registry): Route
       : registry.panels.get(`${state.overlay.module}/${state.overlay.panel}`);
   // A panel that confirms letters or owns the input line keeps the draft live.
   const live = (focused?.def.confirm?.length ?? 0) > 0 || focused?.def.submit !== undefined;
+  // A panel that takes typed text gets what its keymap leaves, unless it keeps the draft live.
+  const takesText = (text: string): Route | null =>
+    state.overlay !== null && !live && focused?.def.text !== undefined
+      ? { kind: 'panel-text', module: state.overlay.module, panel: state.overlay.panel, text }
+      : null;
   if (spec === null) {
     // A multi-character chunk behind an open panel is the panel's to ignore, never the draft's,
     // unless the panel keeps the draft live.
-    return state.menu === null && state.overlay !== null && !live
-      ? { kind: 'ignore' }
-      : { kind: 'edit' };
+    if (state.menu !== null || state.overlay === null || live) return { kind: 'edit' };
+    return takesText(key.input) ?? { kind: 'ignore' };
   }
   if (spec === 'ctrl+c') return { kind: 'exit-chord' };
 
@@ -97,7 +108,7 @@ export function resolveKey(state: KeyState, key: Key, registry: Registry): Route
       };
     const g = registry.globals.get(spec);
     if (g) return { kind: 'global', module: g.module, key: spec };
-    if (!live) return { kind: 'ignore' };
+    if (!live) return ([...spec].length === 1 ? takesText(key.input) : null) ?? { kind: 'ignore' };
     if (spec === 'enter') {
       const armed = focused?.def.confirm?.find((c) => c.key === state.armed);
       return armed === undefined

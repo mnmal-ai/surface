@@ -337,3 +337,41 @@ describe('the full-screen viewport', () => {
     });
   });
 });
+
+describe('a panel that takes typed text', () => {
+  const typed = defineModule<{ t: Record<string, never> }>('test.t', {
+    panels: {
+      t: { view: () => null, keymap: [{ key: 'r', act: 'related' }], text: () => undefined }
+    }
+  });
+  const treg = composeModules([typed, mod]);
+  const on: KeyState = { ...idle, overlay: { module: 'test.t', panel: 't' } };
+
+  it('gets a printable key its keymap does not bind', () => {
+    expect(resolveKey(on, { input: 'x' }, treg)).toEqual({
+      kind: 'panel-text',
+      module: 'test.t',
+      panel: 't',
+      text: 'x'
+    });
+  });
+  it("a bound key is still the keymap's", () => {
+    expect(resolveKey(on, { input: 'r' }, treg)).toMatchObject({ kind: 'panel', act: 'related' });
+  });
+  it('gets a pasted chunk whole', () => {
+    expect(resolveKey(on, { input: 'abc' }, treg)).toEqual({
+      kind: 'panel-text',
+      module: 'test.t',
+      panel: 't',
+      text: 'abc'
+    });
+  });
+  it('never gets a ctrl or meta chord', () => {
+    expect(resolveKey(on, { input: 'x', ctrl: true }, treg)).toEqual({ kind: 'ignore' });
+  });
+  it('without the hook, typed keys are ignored as before', () => {
+    const s: KeyState = { ...idle, overlay: { module: 'test.k', panel: 'list' } };
+    expect(resolveKey(s, { input: 'x' }, reg)).toEqual({ kind: 'ignore' });
+    expect(resolveKey(s, { input: 'abc' }, reg)).toEqual({ kind: 'ignore' });
+  });
+});

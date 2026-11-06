@@ -21,6 +21,10 @@
     "./text": {
       "types": "./dist/text.d.ts",
       "import": "./dist/text.js"
+    },
+    "./list": {
+      "types": "./dist/list.d.ts",
+      "import": "./dist/list.js"
     }
   },
   "files": [

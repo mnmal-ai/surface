@@ -688,6 +688,7 @@ export function createApp(opts: AppOptions): {
           if (opts?.ifNoneOpen === true && overlayRef.current !== null) return;
           putOverlay({ module: moduleId, panel, state });
         },
+        panelOpen: () => overlayRef.current !== null,
         update: (panel, fn) => {
           if (disposed.current) return;
           const o = overlayRef.current;
@@ -1072,13 +1073,18 @@ export function createApp(opts: AppOptions): {
           }
           return;
         }
-        case 'panel': {
+        case 'panel':
+        case 'panel-text': {
           const def = registry.panels.get(`${route.module}/${route.panel}`)?.def;
-          const handler = def?.on?.[route.act];
-          if (!handler || !overlay) return;
+          const act = route.kind === 'panel' ? def?.on?.[route.act] : undefined;
+          const typed = route.kind === 'panel-text' ? def?.text : undefined;
+          if ((!act && !typed) || !overlay) return;
           let next: unknown;
           try {
-            next = handler(overlay.state, ctxFor(route.module) as ModuleCtx<unknown>);
+            const c = ctxFor(route.module) as ModuleCtx<unknown>;
+            next = act
+              ? act(overlay.state, c)
+              : typed?.(overlay.state, (route as { text: string }).text, c);
           } catch (err) {
             guard(route.module, () => {
               throw err;
