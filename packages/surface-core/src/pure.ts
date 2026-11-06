@@ -22,6 +22,15 @@ export {
 } from './editor.js';
 export { CTRL_C_WINDOW_MS, ctrlC } from './exit-chord.js';
 export {
+  FOLLOWING,
+  linesBelow,
+  pageStep,
+  resolveFullscreen,
+  type Scroll,
+  scrollBy,
+  viewTop
+} from './fullscreen.js';
+export {
   EMPTY_HISTORY,
   HISTORY_MAX,
   type HistoryState,
