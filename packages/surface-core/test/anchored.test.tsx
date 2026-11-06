@@ -95,6 +95,21 @@ describe('a bottom-anchored pane', () => {
     on.app.unmount();
   });
 
+  it('a panel closing on an empty transcript draws the input again after the wipe', async () => {
+    const on = onTerminal(true);
+    await tick();
+    on.ctx().open('p', {});
+    await tick();
+    on.ctx().close();
+    await tick(100);
+    const wipe = on.writes.findLastIndex((w) => w.includes(CLEAR_PANE));
+    expect(wipe).toBeGreaterThanOrEqual(0);
+    // The wipe erased the frame Ink last drew; something after it must draw the input line.
+    const after = on.writes.slice(wipe).join('');
+    expect(after.slice(after.indexOf(CLEAR_PANE) + CLEAR_PANE.length)).toContain('›');
+    on.app.unmount();
+  });
+
   it('a re-lay reprints only the newest REPRINT_LINES, after a note for what it left out', async () => {
     const on = onTerminal(true);
     await tick();
