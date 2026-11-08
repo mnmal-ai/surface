@@ -23,7 +23,7 @@ synoptic), no raw hex outside `surface-theme`, and the pure packages import no I
 
 Pre-1.0, the module contract may break between minor versions.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for pull requests and labels, and [SECURITY.md](SECURITY.md) to report a vulnerability.
+See [CONTRIBUTING.md](CONTRIBUTING.md) to report a bug or suggest an idea, and [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## License
 
